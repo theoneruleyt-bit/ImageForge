@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.imageforge.app"
     compileSdk = 35
+
     defaultConfig {
         applicationId = "com.imageforge.app"
         minSdk = 26
@@ -14,8 +15,15 @@ android {
         versionCode = 1
         versionName = "0.1.0"
     }
-    buildFeatures { compose = true }
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 }
 
 dependencies {
