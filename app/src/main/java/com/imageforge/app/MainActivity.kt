@@ -242,18 +242,74 @@ private fun formatBytes(bytes: Long): String = when {
 
 @Composable
 private fun BatchScreen(modifier: Modifier, uris: List<Uri>, pick: () -> Unit) {
+    val context = LocalContext.current
+    val executor = remember { Executors.newSingleThreadExecutor() }
+    var quality by remember { mutableFloatStateOf(82f) }
+    var format by remember { mutableStateOf(OutputFormat.JPEG) }
+    var maxDimension by remember { mutableStateOf<Int?>(null) }
+    var processing by remember { mutableStateOf(false) }
+    var completed by remember { mutableIntStateOf(0) }
+    var successCount by remember { mutableIntStateOf(0) }
+    var failedCount by remember { mutableIntStateOf(0) }
+    var resultText by remember { mutableStateOf<String?>(null) }
+    val batch = uris.take(5)
+
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        ScreenHeader("Batch Studio", "One workflow for multiple images", Icons.Outlined.Collections)
+        ScreenHeader("Batch Studio", "Process up to 5 images in one workflow", Icons.Outlined.Collections)
         Card(shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(if (uris.isEmpty()) "No batch selected" else "${uris.size} images selected", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("Free supports up to 5 images per batch. Unlimited batch processing is a Pro feature.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = pick, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.AddPhotoAlternate, null); Spacer(Modifier.width(8.dp)); Text("Select images") }
+            Text(if (uris.size > 5) "Free mode will process the first 5 images. Unlimited batches will be a Pro feature." else "Free mode supports up to 5 images per batch.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = pick, enabled = !processing, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.AddPhotoAlternate, null); Spacer(Modifier.width(8.dp)); Text("Select images") }
         } }
-        SettingRow(Icons.Outlined.AspectRatio, "Resize", "Keep original dimensions")
-        SettingRow(Icons.Outlined.SwapHoriz, "Format", "Keep original format")
-        SettingRow(Icons.Outlined.TrackChanges, "Maximum size", "No limit")
-        SettingRow(Icons.Outlined.Badge, "Rename", "Original filenames")
-        Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Process batch — planned for V0.5") }
+
+        Card(shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("Batch settings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Quality ${quality.toInt()}%", fontWeight = FontWeight.SemiBold)
+            Slider(value = quality, onValueChange = { quality = it }, valueRange = 40f..100f, enabled = !processing && format != OutputFormat.PNG)
+            Text("Output format", fontWeight = FontWeight.SemiBold)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutputFormat.entries.forEach { f -> FilterChip(selected = format == f, onClick = { format = f }, enabled = !processing, label = { Text(f.label) }) }
+            }
+            Text("Maximum dimension", fontWeight = FontWeight.SemiBold)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(null to "Original", 2048 to "2048 px", 1600 to "1600 px", 1080 to "1080 px").forEach { (value, label) ->
+                    FilterChip(selected = maxDimension == value, onClick = { maxDimension = value }, enabled = !processing, label = { Text(label) })
+                }
+            }
+        } }
+
+        if (processing) {
+            LinearProgressIndicator(progress = { if (batch.isEmpty()) 0f else completed.toFloat() / batch.size }, modifier = Modifier.fillMaxWidth())
+            Text("Processing $completed / ${batch.size} • saved $successCount • failed $failedCount", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
+        Button(
+            onClick = {
+                if (batch.isEmpty()) return@Button
+                processing = true; completed = 0; successCount = 0; failedCount = 0; resultText = null
+                val requestQuality = quality.toInt(); val requestFormat = format; val requestMax = maxDimension
+                executor.execute {
+                    var ok = 0; var failed = 0
+                    batch.forEachIndexed { index, uri ->
+                        runCatching { ImageEngine.processAndSave(context, ImageProcessRequest(uri, requestQuality, requestMax, requestFormat)) }
+                            .onSuccess { ok++ }.onFailure { failed++ }
+                        val done = index + 1; val okNow = ok; val failNow = failed
+                        Handler(Looper.getMainLooper()).post { completed = done; successCount = okNow; failedCount = failNow }
+                    }
+                    Handler(Looper.getMainLooper()).post {
+                        processing = false
+                        resultText = "Batch complete • $ok saved${if (failed > 0) " • $failed failed" else ""} • Pictures/ImageForge"
+                    }
+                }
+            },
+            enabled = batch.isNotEmpty() && !processing,
+            modifier = Modifier.fillMaxWidth().height(54.dp)
+        ) {
+            if (processing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Outlined.Collections, null)
+            Spacer(Modifier.width(8.dp)); Text(if (processing) "Processing batch…" else "Process ${batch.size} images")
+        }
+        resultText?.let { Text(it, color = if (failedCount == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold) }
+        Text("Each image is processed sequentially to reduce peak memory use. Outputs stay on-device and are saved to Pictures/ImageForge.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -274,7 +330,7 @@ private fun SettingsScreen(modifier: Modifier) {
         SettingRow(Icons.Outlined.Security, "Privacy", "Processing will stay on-device")
         SettingRow(Icons.Outlined.FolderOpen, "Export", "Choose destination when saving")
         SettingRow(Icons.Outlined.DarkMode, "Appearance", "System-ready theme foundation")
-        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.4.0 • Smart Target Size")
+        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.5.0 • Batch Engine")
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(18.dp)) { Text("ImageForge Pro", fontWeight = FontWeight.Bold); Text("Planned lifetime unlock: unlimited batch, recipes, advanced workflows and no ads.", color = MaterialTheme.colorScheme.onSecondaryContainer) } }
     }
 }
