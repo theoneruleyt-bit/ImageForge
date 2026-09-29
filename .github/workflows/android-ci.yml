@@ -18,7 +18,13 @@ jobs:
         run: gradle :app:testDebugUnitTest --stacktrace
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
+      - name: Build release AAB candidate
+        run: gradle :app:bundleRelease --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageForge-V0.11.0-debug-apk
+          name: ImageForge-V1.0.0-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ImageForge-V1.0.0-release-aab-unsigned
+          path: app/build/outputs/bundle/release/app-release.aab

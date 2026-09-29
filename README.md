@@ -38,3 +38,7 @@ Billing UI state now uses Compose-observable state directly. Purchase and restor
 - Kept sequential batch processing to reduce peak memory pressure.
 - Added accessibility semantics to key quality sliders.
 - Version bumped to 0.11.0 (17).
+
+
+## V1.0 Release Candidate
+Version 1.0.0 (code 18) adds the Play release pack, release AAB CI candidate, signing/billing checklist, store listing draft, and privacy-policy draft. Signing secrets are intentionally not committed. Real Google Play purchase validation remains a Play Internal testing gate.
