@@ -2,6 +2,8 @@ package com.imageforge.app.image
 
 import android.app.Activity
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import com.android.billingclient.api.*
 
 /** Google Play one-time purchase manager for ImageForge Pro Lifetime. */
@@ -21,8 +23,18 @@ class BillingEngine(
         private set
     var statusMessage: String? = null
         private set
+    var isRestoring: Boolean = false
+        private set
     private var productDetails: ProductDetails? = null
     private var selectedOfferToken: String? = null
+    private var pendingUserRestore: Boolean = false
+    private var isConnecting: Boolean = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private fun notifyStateChanged() {
+        if (Looper.myLooper() == Looper.getMainLooper()) onStateChanged()
+        else mainHandler.post { onStateChanged() }
+    }
 
     private val prefs = context.getSharedPreferences("imageforge_billing", Context.MODE_PRIVATE)
     private val billingClient = BillingClient.newBuilder(context)
@@ -39,21 +51,29 @@ class BillingEngine(
     }
 
     private fun connect() {
+        if (billingClient.isReady || isConnecting) return
+        isConnecting = true
         billingClient.startConnection(object : BillingClientStateListener {
             override fun onBillingSetupFinished(result: BillingResult) {
+                isConnecting = false
                 isReady = result.responseCode == BillingClient.BillingResponseCode.OK
                 if (isReady) {
                     queryProduct()
-                    restorePurchases(silent = true)
+                    restorePurchases(silent = !pendingUserRestore)
                 } else {
+                    if (pendingUserRestore) {
+                        pendingUserRestore = false
+                        isRestoring = false
+                    }
                     statusMessage = "Google Play Billing is not available right now."
-                    onStateChanged()
+                    notifyStateChanged()
                 }
             }
 
             override fun onBillingServiceDisconnected() {
+                isConnecting = false
                 isReady = false
-                onStateChanged()
+                notifyStateChanged()
             }
         })
     }
@@ -71,7 +91,7 @@ class BillingEngine(
                 selectedOfferToken = offer?.offerToken
                 formattedPrice = offer?.formattedPrice
             }
-            onStateChanged()
+            notifyStateChanged()
         }
     }
 
@@ -80,7 +100,7 @@ class BillingEngine(
         val offerToken = selectedOfferToken
         if (!isReady || details == null || offerToken == null) {
             statusMessage = "Pro product is not available yet. Install the Play test build and check the Play Console product."
-            onStateChanged()
+            notifyStateChanged()
             return
         }
         val productParams = BillingFlowParams.ProductDetailsParams.newBuilder()
@@ -93,15 +113,19 @@ class BillingEngine(
         )
         if (result.responseCode != BillingClient.BillingResponseCode.OK) {
             statusMessage = result.debugMessage.ifBlank { "Could not start purchase." }
-            onStateChanged()
+            notifyStateChanged()
         }
     }
 
     fun restorePurchases(silent: Boolean = false) {
+        if (!silent) {
+            pendingUserRestore = true
+            isRestoring = true
+            statusMessage = "Checking Google Play for previous purchases…"
+            notifyStateChanged()
+        }
         if (!billingClient.isReady) {
-            if (!silent) statusMessage = "Connecting to Google Play…"
             if (!isReady) connect()
-            onStateChanged()
             return
         }
         val params = QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build()
@@ -116,11 +140,15 @@ class BillingEngine(
                     it.purchaseState == Purchase.PurchaseState.PURCHASED &&
                         it.products.contains(PRO_PRODUCT_ID) && !it.isAcknowledged
                 }.forEach(::acknowledge)
-                if (!silent) statusMessage = if (owned) "ImageForge Pro restored." else "No Pro purchase was found for this Google Play account."
+                if (!silent) statusMessage = if (owned) "ImageForge Pro restored." else "No previous ImageForge Pro purchase was found for this Google Play account."
             } else if (!silent) {
-                statusMessage = result.debugMessage.ifBlank { "Could not restore purchases." }
+                statusMessage = result.debugMessage.ifBlank { "Could not restore purchases from Google Play." }
             }
-            onStateChanged()
+            if (!silent) {
+                isRestoring = false
+                pendingUserRestore = false
+            }
+            notifyStateChanged()
         }
     }
 
@@ -131,7 +159,7 @@ class BillingEngine(
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> restorePurchases()
             else -> statusMessage = result.debugMessage.ifBlank { "Purchase was not completed." }
         }
-        onStateChanged()
+        notifyStateChanged()
     }
 
     private fun handlePurchase(purchase: Purchase) {
@@ -148,7 +176,7 @@ class BillingEngine(
             if (result.responseCode != BillingClient.BillingResponseCode.OK) {
                 statusMessage = "Purchase received, but acknowledgement is pending."
             }
-            onStateChanged()
+            notifyStateChanged()
         }
     }
 

@@ -19,3 +19,10 @@ Create and activate a one-time product with the exact ID `imageforge_pro_lifetim
 
 ## V0.10.2
 - Fixed Kotlin compiler compatibility by using Play Billing 9.1.0 core API without the unused billing-ktx module.
+
+
+## V0.10.3 Restore Purchase Feedback Fix
+- Restore Purchase now shows immediate progress feedback.
+- A user-triggered restore continues after Google Play reconnects instead of silently returning.
+- Restore results show a visible success, no-purchase, or error message.
+- Billing UI callbacks are marshalled to the Android main thread.

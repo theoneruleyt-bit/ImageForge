@@ -591,8 +591,16 @@ private fun ProScreen(modifier: Modifier, billing: BillingEngine) {
             }
             if (!billing.isReady) Text("Connect to Google Play to load the purchase product. The actual localized price comes from Play Console.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        OutlinedButton(onClick = { billing.restorePurchases() }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Restore, null); Spacer(Modifier.width(8.dp)); Text("Restore purchase") }
-        billing.statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) }
+        OutlinedButton(onClick = { billing.restorePurchases() }, enabled = !billing.isRestoring, modifier = Modifier.fillMaxWidth()) {
+            if (billing.isRestoring) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            else Icon(Icons.Outlined.Restore, null)
+            Spacer(Modifier.width(8.dp)); Text(if (billing.isRestoring) "Checking purchases…" else "Restore purchase")
+        }
+        billing.statusMessage?.let { message ->
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+                Text(message, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.SemiBold)
+            }
+        }
         Text("Free remains useful: single-image tools, Target KB, basic presets, Before/After, privacy tools and batches up to 5 images remain available without Pro.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -604,7 +612,7 @@ private fun SettingsScreen(modifier: Modifier) {
         SettingRow(Icons.Outlined.Security, "Privacy", "Processing will stay on-device")
         SettingRow(Icons.Outlined.FolderOpen, "Export", "Choose destination when saving")
         SettingRow(Icons.Outlined.DarkMode, "Appearance", "System-ready theme foundation")
-        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.10.0 • Free/Pro + Play Billing")
+        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.10.3 • Free/Pro + Play Billing")
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(18.dp)) { Text("ImageForge Pro", fontWeight = FontWeight.Bold); Text("Lifetime unlock: $1.99 • unlimited batch, custom recipes, advanced workflows and no ads.", color = MaterialTheme.colorScheme.onSecondaryContainer) } }
     }
 }
