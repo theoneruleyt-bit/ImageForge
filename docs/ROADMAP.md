@@ -1,28 +1,18 @@
 # ImageForge Roadmap
 
-- V0.1 Foundation — complete
-- V0.2 Professional UI + Photo Picker — complete
-- V0.3 Real Image Engine — complete
-- V0.4 Smart Target Size — complete
-- V0.4.1 Exact Size Fix — complete
-- V0.5 Batch Engine — device test found single-output issue
-- V0.7.0 Batch Engine Fix — unique output names + explicit queued count
-- V0.7 Before/After Preview + Output Predictor — next after V0.7.0 device verification
-
-
+- [x] V0.1 Foundation
+- [x] V0.2 Professional UI + Photo Picker
+- [x] V0.3 Real Image Engine
+- [x] V0.4 Smart Target Size
+- [x] V0.4.1 Exact Size Fix
+- [x] V0.5/V0.5.1 Batch Engine + collision fix
+- [x] V0.6 Before/After Preview + Output Predictor
 - [x] V0.7 Privacy Cleaner + Metadata Engine
+- [x] V0.8 Recipes / Workflow Engine
+- [x] V0.9 History + Export + Share
+- [x] V0.10 Free/Pro + Google Play Billing foundation
+- [ ] V0.11 Tests + performance + accessibility + release hardening
+- [ ] V1.0 Signed AAB + Play Store production preparation
 
-- [x] V0.8 Recipes / Workflow Engine — built-in recipes, custom local recipes, apply-to-Studio workflow
-- [ ] V0.9 History + Export + Share
-
-## V0.9 — History + Export + Share
-Implemented: local output history, open/share-export actions, stale-output handling, per-item removal and non-destructive history clearing.
-
-
-## V0.10 — Free / Pro + Play Billing
-- Google Play Billing 9.1.0
-- One-time Lifetime Pro product (`imageforge_pro_lifetime`)
-- $1.99 US base-price target; localized price comes from Play
-- Restore purchase and entitlement refresh
-- Free: up to 5 batch items and built-in recipes
-- Pro: unlimited batch + custom recipe creation
+## V0.10 — Free/Pro + Lifetime Purchase
+Play Billing Library 9.1.0, one-time product `imageforge_pro_lifetime`, purchase/acknowledgement/restore flow, $1.99 US pricing plan, useful Free tier, unlimited batch and custom recipe Pro gates.

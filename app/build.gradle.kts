@@ -11,8 +11,8 @@ android {
         applicationId = "com.imageforge.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.10.0"
+        versionCode = 13
+        versionName = "0.10.1"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -33,6 +33,6 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.exifinterface:exifinterface:1.4.1")
-    implementation("com.android.billingclient:billing-ktx:9.1.0")
+    implementation("com.android.billingclient:billing:9.1.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -45,6 +45,7 @@ import com.imageforge.app.image.ImageRecipe
 import com.imageforge.app.image.RecipeEngine
 import com.imageforge.app.image.HistoryEngine
 import com.imageforge.app.image.HistoryItem
+import com.imageforge.app.image.BillingEngine
 import java.util.concurrent.Executors
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -99,6 +100,7 @@ fun ImageForgeApp() {
             Destination.Batch -> BatchScreen(Modifier.padding(padding), selectedUris, openPicker, billingState.isPro) { destination = Destination.Pro }
             Destination.Recipes -> RecipesScreen(Modifier.padding(padding), billingState.isPro, { destination = Destination.Pro }) { recipe -> pendingRecipe = recipe; studioGoal = if (recipe.removeMetadata) "Protect Privacy" else "Make File Smaller"; destination = Destination.Studio }
             Destination.History -> HistoryScreen(Modifier.padding(padding))
+            Destination.Pro -> ProScreen(Modifier.padding(padding), billing)
             Destination.Pro -> ProScreen(Modifier.padding(padding), billingState, { activity?.let { billing.purchase(it) } }, { billing.restore() })
         }
     }
@@ -583,14 +585,49 @@ private fun ProScreen(modifier: Modifier, state: BillingManager.State, buy: () -
 }
 
 @Composable
+private fun ProScreen(modifier: Modifier, billing: BillingEngine) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val price = billing.formattedPrice ?: "$1.99"
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        ScreenHeader("ImageForge Pro", "One purchase. Lifetime access.", Icons.Outlined.WorkspacePremium)
+        Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(if (billing.isPro) Icons.Outlined.Verified else Icons.Outlined.WorkspacePremium, null, Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
+                Text(if (billing.isPro) "Pro is active" else "$price Lifetime", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(if (billing.isPro) "Thanks for supporting ImageForge. Your Pro features are unlocked on this device." else "No subscription. Pay once through Google Play and keep Pro.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        listOf(
+            "Unlimited batch processing",
+            "Custom reusable recipes",
+            "Advanced workflows and future Pro tools",
+            "Batch privacy automation",
+            "Ad-free experience"
+        ).forEach { feature ->
+            Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.CheckCircle, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(10.dp)); Text(feature, fontWeight = FontWeight.Medium) }
+        }
+        if (!billing.isPro) {
+            Button(onClick = { activity?.let(billing::launchPurchase) }, enabled = billing.isReady && activity != null, modifier = Modifier.fillMaxWidth().height(54.dp)) {
+                Icon(Icons.Outlined.LockOpen, null); Spacer(Modifier.width(8.dp)); Text("Unlock Pro • $price")
+            }
+            if (!billing.isReady) Text("Connect to Google Play to load the purchase product. The actual localized price comes from Play Console.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        OutlinedButton(onClick = { billing.restorePurchases() }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Restore, null); Spacer(Modifier.width(8.dp)); Text("Restore purchase") }
+        billing.statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) }
+        Text("Free remains useful: single-image tools, Target KB, basic presets, Before/After, privacy tools and batches up to 5 images remain available without Pro.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
 private fun SettingsScreen(modifier: Modifier) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ScreenHeader("Settings", "Privacy-first defaults", Icons.Outlined.Settings)
         SettingRow(Icons.Outlined.Security, "Privacy", "Processing will stay on-device")
         SettingRow(Icons.Outlined.FolderOpen, "Export", "Choose destination when saving")
         SettingRow(Icons.Outlined.DarkMode, "Appearance", "System-ready theme foundation")
-        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.8.0 • Recipes / Workflow Engine")
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(18.dp)) { Text("ImageForge Pro", fontWeight = FontWeight.Bold); Text("Planned lifetime unlock: unlimited batch, recipes, advanced workflows and no ads.", color = MaterialTheme.colorScheme.onSecondaryContainer) } }
+        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.10.0 • Free/Pro + Play Billing")
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(18.dp)) { Text("ImageForge Pro", fontWeight = FontWeight.Bold); Text("Lifetime unlock: $1.99 • unlimited batch, custom recipes, advanced workflows and no ads.", color = MaterialTheme.colorScheme.onSecondaryContainer) } }
     }
 }
 
