@@ -73,10 +73,10 @@ fun ImageForgeApp() {
     var studioGoal by remember { mutableStateOf("Make File Smaller") }
     var pendingRecipe by remember { mutableStateOf<ImageRecipe?>(null) }
     val context = LocalContext.current
-    val activity = context as? Activity
-    val billing = remember { BillingManager(context.applicationContext) }
-    val billingState by billing.state.collectAsState()
-    DisposableEffect(Unit) { billing.start(); onDispose { billing.close() } }
+    var billingRevision by remember { mutableIntStateOf(0) }
+    val billing = remember { BillingEngine(context.applicationContext) { billingRevision++ } }
+    billingRevision // observe BillingEngine callbacks and refresh Pro-gated UI
+    DisposableEffect(billing) { onDispose { billing.close() } }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(50)) { selectedUris = it }
     val openPicker = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
 
@@ -97,11 +97,10 @@ fun ImageForgeApp() {
         when (destination) {
             Destination.Home -> HomeScreen(Modifier.padding(padding), selectedUris, openPicker) { goal -> studioGoal = goal; destination = Destination.Studio }
             Destination.Studio -> StudioScreen(Modifier.padding(padding), selectedUris, studioGoal, openPicker, pendingRecipe) { pendingRecipe = null }
-            Destination.Batch -> BatchScreen(Modifier.padding(padding), selectedUris, openPicker, billingState.isPro) { destination = Destination.Pro }
-            Destination.Recipes -> RecipesScreen(Modifier.padding(padding), billingState.isPro, { destination = Destination.Pro }) { recipe -> pendingRecipe = recipe; studioGoal = if (recipe.removeMetadata) "Protect Privacy" else "Make File Smaller"; destination = Destination.Studio }
+            Destination.Batch -> BatchScreen(Modifier.padding(padding), selectedUris, openPicker, billing.isPro) { destination = Destination.Pro }
+            Destination.Recipes -> RecipesScreen(Modifier.padding(padding), billing.isPro, { destination = Destination.Pro }) { recipe -> pendingRecipe = recipe; studioGoal = if (recipe.removeMetadata) "Protect Privacy" else "Make File Smaller"; destination = Destination.Studio }
             Destination.History -> HistoryScreen(Modifier.padding(padding))
             Destination.Pro -> ProScreen(Modifier.padding(padding), billing)
-            Destination.Pro -> ProScreen(Modifier.padding(padding), billingState, { activity?.let { billing.purchase(it) } }, { billing.restore() })
         }
     }
 }
@@ -560,27 +559,6 @@ private fun RecipesScreen(modifier: Modifier, isPro: Boolean, openPro: () -> Uni
             }
         }
         Text("Recipes are stored locally on this device. Applying a recipe loads its settings into Studio before processing.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun ProScreen(modifier: Modifier, state: BillingManager.State, buy: () -> Unit, restore: () -> Unit) {
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        ScreenHeader("ImageForge Pro", "One purchase. Lifetime access.", Icons.Outlined.WorkspacePremium)
-        Card(shape = RoundedCornerShape(26.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(if (state.isPro) "Pro is unlocked" else "Unlock the full toolkit", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(if (state.isPro) "Lifetime Pro is active on this Google Play account." else "Unlimited batch processing, custom recipes, advanced workflows and future Pro tools.", color = MaterialTheme.colorScheme.onPrimaryContainer)
-                if (!state.isPro) {
-                    Text(state.localizedPrice ?: "$1.99 Lifetime • Play price loads after product setup", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
-                    Button(onClick = buy, enabled = state.ready, modifier = Modifier.fillMaxWidth().height(54.dp)) { Icon(Icons.Outlined.WorkspacePremium, null); Spacer(Modifier.width(8.dp)); Text("Get Lifetime Pro") }
-                }
-                OutlinedButton(onClick = restore, enabled = state.ready, modifier = Modifier.fillMaxWidth()) { Text("Restore purchase") }
-            }
-        }
-        listOf("Unlimited batch processing", "Create and save custom recipes", "Advanced workflows", "No subscription", "No account required for image processing").forEach { Text("✓  $it") }
-        state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) }
-        Text("The final price and currency are supplied by Google Play. Configure product ID ${BillingManager.PRO_PRODUCT_ID} as a one-time product in Play Console with a US base price of $1.99.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

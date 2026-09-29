@@ -17,5 +17,5 @@ Real JPG/PNG/WebP processing, Target KB, Batch, Before/After, Output Predictor, 
 ## Play Console setup required
 Create and activate a one-time product with the exact ID `imageforge_pro_lifetime`, configure the intended base price (US $1.99), upload the app to a Play test track, and test with license testers before production.
 
-## V0.10.1
+## V0.10.2
 - Fixed Kotlin compiler compatibility by using Play Billing 9.1.0 core API without the unused billing-ktx module.
