@@ -174,62 +174,113 @@ private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: Strin
     var processing by remember { mutableStateOf(false) }
     var resultText by remember { mutableStateOf<String?>(null) }
     var errorText by remember { mutableStateOf<String?>(null) }
+    var outputUri by remember { mutableStateOf<Uri?>(null) }
+    var actualBytes by remember { mutableStateOf<Long?>(null) }
+    var actualWidth by remember { mutableStateOf<Int?>(null) }
+    var actualHeight by remember { mutableStateOf<Int?>(null) }
     val executor = remember { Executors.newSingleThreadExecutor() }
     DisposableEffect(Unit) { onDispose { executor.shutdown() } }
     val targetMode = mode == "Fit Upload Limit"
+    val source = uris.firstOrNull()
+    val targetBytes = if (targetMode) targetKb.toLong() * 1000L else null
+    val request = source?.let { ImageProcessRequest(it, quality.toInt(), maxDimension, format, targetBytes) }
+    val prediction = remember(source, quality.toInt(), maxDimension, format, targetBytes) {
+        request?.let { runCatching { ImageEngine.predict(context, it) }.getOrNull() }
+    }
+    val original = remember(source) { source?.let { runCatching { ImageEngine.inspect(context, it) }.getOrNull() } }
+
+    LaunchedEffect(source) { outputUri = null; actualBytes = null; actualWidth = null; actualHeight = null; resultText = null }
 
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        ScreenHeader("Studio", "Smart target-size compression runs on-device", Icons.Outlined.Tune)
-        if (uris.isEmpty()) EmptySelection(pick) else UriPreview(uris.first())
+        ScreenHeader("Studio", "Preview the result before you save", Icons.Outlined.Tune)
+        if (source == null) EmptySelection(pick) else {
+            if (outputUri == null) UriPreview(source) else BeforeAfterPreview(source, outputUri!!)
+        }
+
+        if (source != null && prediction != null && original != null) {
+            Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Insights, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(8.dp)); Text(if (actualBytes == null) "Output Predictor" else "Actual Output", fontWeight = FontWeight.Bold) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Stat("Original", formatBytes(original.bytes))
+                        Stat(if (actualBytes == null) "Estimated" else "Actual", formatBytes(actualBytes ?: prediction.estimatedBytes))
+                        val saving = if (actualBytes != null && original.bytes > 0) ((1f - actualBytes!!.toFloat()/original.bytes) * 100).toInt() else prediction.savingsPercent
+                        Stat("Savings", "$saving%")
+                    }
+                    val w = actualWidth ?: prediction.width; val h = actualHeight ?: prediction.height
+                    Text("${w}×${h} • ${format.label}${if (actualBytes == null) " • estimate" else " • measured"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    if (actualBytes == null) Text("Estimate is a planning aid; final encoded size can differ by image content.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+            }
+        }
+
         Text("Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Make File Smaller", "Fit Upload Limit", "Convert Format").forEach { label -> FilterChip(selected = mode == label, onClick = { mode = label }, label = { Text(label) }) }
+            listOf("Make File Smaller", "Fit Upload Limit", "Convert Format").forEach { label -> FilterChip(selected = mode == label, onClick = { mode = label; outputUri = null; actualBytes = null }, label = { Text(label) }) }
         }
         Card(shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (targetMode) {
                 Text("Target file size", fontWeight = FontWeight.SemiBold)
                 Text("Under ${targetKb.toInt()} KB", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                Slider(value = targetKb, onValueChange = { targetKb = it }, valueRange = 50f..2000f, steps = 38)
+                Slider(value = targetKb, onValueChange = { targetKb = it; outputUri = null; actualBytes = null }, valueRange = 50f..2000f, steps = 38)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(100, 250, 500, 1024).forEach { kb -> FilterChip(selected = targetKb.toInt() == kb, onClick = { targetKb = kb.toFloat() }, label = { Text(if (kb == 1024) "1 MB" else "$kb KB") }) }
+                    listOf(100, 250, 500, 1024).forEach { kb -> FilterChip(selected = targetKb.toInt() == kb, onClick = { targetKb = kb.toFloat(); outputUri = null; actualBytes = null }, label = { Text(if (kb == 1024) "1 MB" else "$kb KB") }) }
                 }
-                Text("ImageForge searches for the highest usable quality under the limit, then reduces dimensions only when needed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Text("Quality balance", fontWeight = FontWeight.SemiBold); Text("${quality.toInt()}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                Slider(value = quality, onValueChange = { quality = it }, valueRange = 40f..100f)
+                Slider(value = quality, onValueChange = { quality = it; outputUri = null; actualBytes = null }, valueRange = 40f..100f)
             }
             HorizontalDivider()
             Text("Output format", fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutputFormat.entries.forEach { f -> FilterChip(selected = format == f, onClick = { format = f }, enabled = !targetMode || f != OutputFormat.PNG, label = { Text(f.label) }) } }
-            if (targetMode && format == OutputFormat.PNG) Text("Exact-size mode uses JPG or WebP because PNG quality is lossless.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutputFormat.entries.forEach { f -> FilterChip(selected = format == f, onClick = { format = f; outputUri = null; actualBytes = null }, enabled = !targetMode || f != OutputFormat.PNG, label = { Text(f.label) }) } }
             Text("Maximum dimension", fontWeight = FontWeight.SemiBold)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(null to "Original", 2048 to "2048 px", 1600 to "1600 px", 1080 to "1080 px").forEach { (value, label) -> FilterChip(selected = maxDimension == value, onClick = { maxDimension = value }, label = { Text(label) }) }
+                listOf(null to "Original", 2048 to "2048 px", 1600 to "1600 px", 1080 to "1080 px").forEach { (value, label) -> FilterChip(selected = maxDimension == value, onClick = { maxDimension = value; outputUri = null; actualBytes = null }, label = { Text(label) }) }
             }
         } }
         Button(
             onClick = {
-                val source = uris.firstOrNull() ?: return@Button
+                val req = request ?: return@Button
                 processing = true; resultText = null; errorText = null
-                val targetBytes = if (targetMode) targetKb.toLong() * 1000L else null
                 executor.execute {
-                    runCatching { ImageEngine.processAndSave(context, ImageProcessRequest(source, quality.toInt(), maxDimension, format, targetBytes)) }
+                    runCatching { ImageEngine.processAndSave(context, req) }
                         .onSuccess { r -> Handler(Looper.getMainLooper()).post {
-                            processing = false
-                            val targetStatus = if (r.targetBytes != null) if (r.targetMet) " • target met" else " • closest result"
-                            else ""
+                            processing = false; outputUri = r.outputUri; actualBytes = r.bytes; actualWidth = r.width; actualHeight = r.height
+                            val targetStatus = if (r.targetBytes != null) if (r.targetMet) " • target met" else " • closest result" else ""
                             resultText = "Saved • ${formatBytes(r.bytes)} • ${r.width}×${r.height} • ${r.format.label} • Q${r.qualityUsed}$targetStatus"
                         } }
                         .onFailure { e -> Handler(Looper.getMainLooper()).post { processing = false; errorText = e.message ?: "Processing failed" } }
                 }
             },
-            enabled = uris.isNotEmpty() && !processing && (!targetMode || format != OutputFormat.PNG),
+            enabled = source != null && !processing && (!targetMode || format != OutputFormat.PNG),
             modifier = Modifier.fillMaxWidth().height(54.dp)
-        ) { if (processing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Outlined.AutoFixHigh, null); Spacer(Modifier.width(8.dp)); Text(if (processing) "Solving…" else if (targetMode) "Fit target & save" else "Optimize & save") }
+        ) { if (processing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Outlined.AutoFixHigh, null); Spacer(Modifier.width(8.dp)); Text(if (processing) "Processing…" else if (targetMode) "Fit target & compare" else "Optimize & compare") }
         resultText?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) }
         errorText?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Text("Processing stays on your device. Outputs are saved to Pictures/ImageForge.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+@Composable
+private fun BeforeAfterPreview(before: Uri, after: Uri) {
+    var reveal by remember(before, after) { mutableFloatStateOf(0.5f) }
+    Card(shape = RoundedCornerShape(24.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.fillMaxWidth().height(230.dp).clip(RoundedCornerShape(18.dp))) {
+                UriImage(before, Modifier.matchParentSize())
+                Box(Modifier.fillMaxHeight().fillMaxWidth(reveal).clip(RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp))) { UriImage(after, Modifier.matchParentSize()) }
+                Surface(Modifier.align(Alignment.TopStart).padding(8.dp), shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f)) { Text("AFTER", Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+                Surface(Modifier.align(Alignment.TopEnd).padding(8.dp), shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f)) { Text("BEFORE", Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+            }
+            Slider(value = reveal, onValueChange = { reveal = it }, valueRange = 0.05f..0.95f)
+            Text("Drag to compare processed and original image", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun UriImage(uri: Uri, modifier: Modifier = Modifier) {
+    AndroidView(factory = { context -> ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP } }, update = { it.setImageURI(uri) }, modifier = modifier)
 }
 
 private fun formatBytes(bytes: Long): String = when {

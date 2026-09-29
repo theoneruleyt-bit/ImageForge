@@ -34,6 +34,17 @@ data class ImageProcessResult(
     val targetMet: Boolean = true
 )
 
+
+
+data class ImageInfo(val bytes: Long, val width: Int, val height: Int)
+
+data class OutputPrediction(
+    val estimatedBytes: Long,
+    val width: Int,
+    val height: Int,
+    val savingsPercent: Int
+)
+
 enum class OutputFormat(val label: String, val extension: String, val mimeType: String) {
     JPEG("JPG", "jpg", "image/jpeg"), PNG("PNG", "png", "image/png"), WEBP("WebP", "webp", "image/webp")
 }
@@ -41,6 +52,31 @@ enum class OutputFormat(val label: String, val extension: String, val mimeType: 
 private data class EncodedCandidate(val bitmap: Bitmap, val bytes: ByteArray, val quality: Int)
 
 object ImageEngine {
+    fun inspect(context: Context, uri: Uri): ImageInfo {
+        val resolver = context.contentResolver
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        val size = runCatching { resolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L }.getOrDefault(-1L)
+        return ImageInfo(size.coerceAtLeast(0L), bounds.outWidth.coerceAtLeast(0), bounds.outHeight.coerceAtLeast(0))
+    }
+
+    fun predict(context: Context, request: ImageProcessRequest): OutputPrediction {
+        val info = inspect(context, request.source)
+        val longest = max(info.width, info.height).coerceAtLeast(1)
+        val scale = request.maxDimension?.let { if (longest > it) it.toFloat() / longest else 1f } ?: 1f
+        val width = (info.width * scale).roundToInt().coerceAtLeast(1)
+        val height = (info.height * scale).roundToInt().coerceAtLeast(1)
+        val pixelRatio = (width.toDouble() * height) / (info.width.coerceAtLeast(1).toDouble() * info.height.coerceAtLeast(1))
+        val estimated = request.targetBytes?.takeIf { request.format != OutputFormat.PNG }?.let { target ->
+            if (info.bytes > 0) minOf(target, (info.bytes * pixelRatio).toLong().coerceAtLeast(1L)) else target
+        } ?: run {
+            val formatFactor = when (request.format) { OutputFormat.JPEG -> 0.92; OutputFormat.WEBP -> 0.72; OutputFormat.PNG -> 1.08 }
+            val qualityFactor = if (request.format == OutputFormat.PNG) 1.0 else (0.28 + request.quality.coerceIn(1,100) / 100.0 * 0.72)
+            if (info.bytes > 0) (info.bytes * pixelRatio * formatFactor * qualityFactor).toLong().coerceAtLeast(1L) else 0L
+        }
+        val savings = if (info.bytes > 0) ((1.0 - estimated.toDouble() / info.bytes) * 100).roundToInt().coerceIn(-999, 100) else 0
+        return OutputPrediction(estimated, width, height, savings)
+    }
     fun processAndSave(context: Context, request: ImageProcessRequest): ImageProcessResult {
         val resolver = context.contentResolver
         val source = decodeSampled(resolver, request.source, request.maxDimension)
