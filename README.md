@@ -10,9 +10,13 @@ Reads supported EXIF privacy fields (GPS, device/camera, capture date, software 
 ## V0.8 Recipes / Workflow Engine
 Built-in recipes, locally saved custom workflows, one-tap Studio application, format/quality/max-dimension/privacy settings.
 
-## V0.9 — History, Export & Share
+## V0.10 — History, Export & Share
 - Local history for successful Studio, Privacy Cleaner and Batch outputs.
 - Open saved outputs from history.
 - Android Sharesheet export/share with URI read grants.
 - Missing-file-safe history cards and per-item removal.
 - Clear history without deleting gallery images.
+
+
+## V0.10 Billing
+Lifetime Pro uses Google Play Billing 9.1.0. Product ID: `imageforge_pro_lifetime`. US base price target: $1.99 one-time. The UI displays the localized Play price when available. Free remains useful: single-image tools and up to 5 batch items. Pro unlocks unlimited batch and custom recipes.

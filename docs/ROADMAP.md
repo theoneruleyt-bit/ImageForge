@@ -17,3 +17,12 @@
 
 ## V0.9 — History + Export + Share
 Implemented: local output history, open/share-export actions, stale-output handling, per-item removal and non-destructive history clearing.
+
+
+## V0.10 — Free / Pro + Play Billing
+- Google Play Billing 9.1.0
+- One-time Lifetime Pro product (`imageforge_pro_lifetime`)
+- $1.99 US base-price target; localized price comes from Play
+- Restore purchase and entitlement refresh
+- Free: up to 5 batch items and built-in recipes
+- Pro: unlimited batch + custom recipe creation

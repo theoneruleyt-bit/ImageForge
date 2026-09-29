@@ -1,6 +1,7 @@
 package com.imageforge.app
 
 import android.net.Uri
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
@@ -29,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,6 +46,9 @@ import com.imageforge.app.image.RecipeEngine
 import com.imageforge.app.image.HistoryEngine
 import com.imageforge.app.image.HistoryItem
 import java.util.concurrent.Executors
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import kotlinx.coroutines.flow.collectLatest
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,7 +60,7 @@ class MainActivity : ComponentActivity() {
 enum class Destination(val label: String, val icon: ImageVector) {
     Home("Home", Icons.Outlined.Home), Studio("Studio", Icons.Outlined.Tune),
     Batch("Batch", Icons.Outlined.Collections), Recipes("Recipes", Icons.Outlined.AutoAwesome),
-    History("History", Icons.Outlined.History)
+    History("History", Icons.Outlined.History), Pro("Pro", Icons.Outlined.WorkspacePremium)
 }
 
 data class Goal(val title: String, val subtitle: String, val icon: ImageVector)
@@ -66,6 +71,11 @@ fun ImageForgeApp() {
     var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var studioGoal by remember { mutableStateOf("Make File Smaller") }
     var pendingRecipe by remember { mutableStateOf<ImageRecipe?>(null) }
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val billing = remember { BillingManager(context.applicationContext) }
+    val billingState by billing.state.collectAsState()
+    DisposableEffect(Unit) { billing.start(); onDispose { billing.close() } }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(50)) { selectedUris = it }
     val openPicker = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
 
@@ -86,9 +96,10 @@ fun ImageForgeApp() {
         when (destination) {
             Destination.Home -> HomeScreen(Modifier.padding(padding), selectedUris, openPicker) { goal -> studioGoal = goal; destination = Destination.Studio }
             Destination.Studio -> StudioScreen(Modifier.padding(padding), selectedUris, studioGoal, openPicker, pendingRecipe) { pendingRecipe = null }
-            Destination.Batch -> BatchScreen(Modifier.padding(padding), selectedUris, openPicker)
-            Destination.Recipes -> RecipesScreen(Modifier.padding(padding)) { recipe -> pendingRecipe = recipe; studioGoal = if (recipe.removeMetadata) "Protect Privacy" else "Make File Smaller"; destination = Destination.Studio }
+            Destination.Batch -> BatchScreen(Modifier.padding(padding), selectedUris, openPicker, billingState.isPro) { destination = Destination.Pro }
+            Destination.Recipes -> RecipesScreen(Modifier.padding(padding), billingState.isPro, { destination = Destination.Pro }) { recipe -> pendingRecipe = recipe; studioGoal = if (recipe.removeMetadata) "Protect Privacy" else "Make File Smaller"; destination = Destination.Studio }
             Destination.History -> HistoryScreen(Modifier.padding(padding))
+            Destination.Pro -> ProScreen(Modifier.padding(padding), billingState, { activity?.let { billing.purchase(it) } }, { billing.restore() })
         }
     }
 }
@@ -354,7 +365,7 @@ private fun MetadataRow(label: String, value: String) {
 }
 
 @Composable
-private fun BatchScreen(modifier: Modifier, uris: List<Uri>, pick: () -> Unit) {
+private fun BatchScreen(modifier: Modifier, uris: List<Uri>, pick: () -> Unit, isPro: Boolean, openPro: () -> Unit) {
     val context = LocalContext.current
     val executor = remember { Executors.newSingleThreadExecutor() }
     var quality by remember { mutableFloatStateOf(82f) }
@@ -365,13 +376,14 @@ private fun BatchScreen(modifier: Modifier, uris: List<Uri>, pick: () -> Unit) {
     var successCount by remember { mutableIntStateOf(0) }
     var failedCount by remember { mutableIntStateOf(0) }
     var resultText by remember { mutableStateOf<String?>(null) }
-    val batch = uris.take(5)
+    val batch = if (isPro) uris else uris.take(5)
 
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         ScreenHeader("Batch Studio", "Process up to 5 images in one workflow", Icons.Outlined.Collections)
         Card(shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(if (uris.isEmpty()) "No batch selected" else "${uris.size} images selected • ${batch.size} queued", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(if (uris.size > 5) "Free mode will process the first 5 images. Unlimited batches will be a Pro feature." else "Free mode supports up to 5 images per batch.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (isPro) "Pro unlocked • unlimited batch selection." else if (uris.size > 5) "Free processes the first 5 images. Unlock Pro for unlimited batches." else "Free supports up to 5 images per batch.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!isPro && uris.size > 5) TextButton(onClick = openPro) { Text("Unlock unlimited batch") }
             OutlinedButton(onClick = pick, enabled = !processing, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.AddPhotoAlternate, null); Spacer(Modifier.width(8.dp)); Text("Select images") }
         } }
 
@@ -487,7 +499,7 @@ private fun HistoryScreen(modifier: Modifier) {
 }
 
 @Composable
-private fun RecipesScreen(modifier: Modifier, applyRecipe: (ImageRecipe) -> Unit) {
+private fun RecipesScreen(modifier: Modifier, isPro: Boolean, openPro: () -> Unit, applyRecipe: (ImageRecipe) -> Unit) {
     val context = LocalContext.current
     var custom by remember { mutableStateOf(RecipeEngine.loadCustom(context)) }
     var showCreator by remember { mutableStateOf(false) }
@@ -520,7 +532,7 @@ private fun RecipesScreen(modifier: Modifier, applyRecipe: (ImageRecipe) -> Unit
                 }
             }
         }
-        OutlinedButton(onClick = { showCreator = !showCreator }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(8.dp)); Text(if (showCreator) "Close creator" else "Create custom recipe") }
+        OutlinedButton(onClick = { if (isPro) showCreator = !showCreator else openPro() }, modifier = Modifier.fillMaxWidth()) { Icon(if (isPro) Icons.Outlined.Add else Icons.Outlined.Lock, null); Spacer(Modifier.width(8.dp)); Text(if (!isPro) "Unlock Pro for custom recipes" else if (showCreator) "Close creator" else "Create custom recipe") }
         if (showCreator) {
             Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -546,6 +558,27 @@ private fun RecipesScreen(modifier: Modifier, applyRecipe: (ImageRecipe) -> Unit
             }
         }
         Text("Recipes are stored locally on this device. Applying a recipe loads its settings into Studio before processing.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ProScreen(modifier: Modifier, state: BillingManager.State, buy: () -> Unit, restore: () -> Unit) {
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        ScreenHeader("ImageForge Pro", "One purchase. Lifetime access.", Icons.Outlined.WorkspacePremium)
+        Card(shape = RoundedCornerShape(26.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(if (state.isPro) "Pro is unlocked" else "Unlock the full toolkit", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(if (state.isPro) "Lifetime Pro is active on this Google Play account." else "Unlimited batch processing, custom recipes, advanced workflows and future Pro tools.", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                if (!state.isPro) {
+                    Text(state.localizedPrice ?: "$1.99 Lifetime • Play price loads after product setup", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                    Button(onClick = buy, enabled = state.ready, modifier = Modifier.fillMaxWidth().height(54.dp)) { Icon(Icons.Outlined.WorkspacePremium, null); Spacer(Modifier.width(8.dp)); Text("Get Lifetime Pro") }
+                }
+                OutlinedButton(onClick = restore, enabled = state.ready, modifier = Modifier.fillMaxWidth()) { Text("Restore purchase") }
+            }
+        }
+        listOf("Unlimited batch processing", "Create and save custom recipes", "Advanced workflows", "No subscription", "No account required for image processing").forEach { Text("✓  $it") }
+        state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) }
+        Text("The final price and currency are supplied by Google Play. Configure product ID ${BillingManager.PRO_PRODUCT_ID} as a one-time product in Play Console with a US base price of $1.99.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
