@@ -8,3 +8,12 @@
 - V0.6: Metadata / Privacy Cleaner
 - V0.7: Recipes + History
 - V0.8: Billing / Pro / release hardening
+
+
+## V0.3 — Real Image Engine
+- On-device JPEG/PNG/WebP encoding
+- Quality compression
+- Maximum-dimension resize
+- MediaStore export to Pictures/ImageForge
+- Background processing with visible result state
+- Target-KB solver remains V0.4

@@ -1,8 +1,8 @@
-# ImageForge V0.2 — Professional UI Foundation
+# ImageForge V0.3 — Real Image Engine
 
 Goal-based image preparation for Android.
 
-## V0.2
+## V0.3
 - Professional Material 3 application shell
 - Home / Studio / Batch / Recipes / Settings
 - Goal Mode with six outcome-oriented workflows

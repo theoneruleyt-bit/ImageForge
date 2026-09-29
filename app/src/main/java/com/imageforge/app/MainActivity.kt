@@ -2,6 +2,8 @@ package com.imageforge.app
 
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.ImageView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -31,6 +33,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.imageforge.app.ui.theme.ImageForgeTheme
+import com.imageforge.app.image.ImageEngine
+import com.imageforge.app.image.ImageProcessRequest
+import com.imageforge.app.image.OutputFormat
+import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -159,24 +165,58 @@ private fun OutputPredictorCard() {
 
 @Composable
 private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: String, pick: () -> Unit) {
+    val context = LocalContext.current
     var mode by remember(initialGoal) { mutableStateOf(initialGoal) }
     var quality by remember { mutableFloatStateOf(82f) }
+    var format by remember { mutableStateOf(OutputFormat.JPEG) }
+    var maxDimension by remember { mutableStateOf<Int?>(null) }
+    var processing by remember { mutableStateOf(false) }
+    var resultText by remember { mutableStateOf<String?>(null) }
+    var errorText by remember { mutableStateOf<String?>(null) }
+    val executor = remember { Executors.newSingleThreadExecutor() }
+    DisposableEffect(Unit) { onDispose { executor.shutdown() } }
+
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        ScreenHeader("Studio", "Fine-tune the result without technical guesswork", Icons.Outlined.Tune)
+        ScreenHeader("Studio", "Real on-device compression, resize and conversion", Icons.Outlined.Tune)
         if (uris.isEmpty()) EmptySelection(pick) else UriPreview(uris.first())
         Text("Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("Make File Smaller", "Fit Upload Limit", "Convert Format").forEach { label -> FilterChip(selected = mode == label, onClick = { mode = label }, label = { Text(label) }) }
         }
-        Card(shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(18.dp)) {
+        Card(shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Quality balance", fontWeight = FontWeight.SemiBold); Text("${quality.toInt()}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             Slider(value = quality, onValueChange = { quality = it }, valueRange = 40f..100f)
-            HorizontalDivider(); Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Stat("Estimated", "— KB"); Stat("Resolution", "Original"); Stat("Savings", "— %") }
+            HorizontalDivider()
+            Text("Output format", fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutputFormat.entries.forEach { f -> FilterChip(selected = format == f, onClick = { format = f }, label = { Text(f.label) }) } }
+            Text("Maximum dimension", fontWeight = FontWeight.SemiBold)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(null to "Original", 2048 to "2048 px", 1600 to "1600 px", 1080 to "1080 px").forEach { (value, label) -> FilterChip(selected = maxDimension == value, onClick = { maxDimension = value }, label = { Text(label) }) }
+            }
         } }
-        Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().height(54.dp)) { Icon(Icons.Outlined.AutoFixHigh, null); Spacer(Modifier.width(8.dp)); Text("Optimize — engine in V0.3") }
-        Text("V0.2 prepares the complete workflow. Image processing stays disabled until the real engine is connected, so the app never pretends to optimize a file.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Button(
+            onClick = {
+                val source = uris.firstOrNull() ?: return@Button
+                processing = true; resultText = null; errorText = null
+                executor.execute {
+                    runCatching { ImageEngine.processAndSave(context, ImageProcessRequest(source, quality.toInt(), maxDimension, format)) }
+                        .onSuccess { r -> Handler(Looper.getMainLooper()).post { processing = false; resultText = "Saved • ${formatBytes(r.bytes)} • ${r.width}×${r.height} • ${r.format.label}" } }
+                        .onFailure { e -> Handler(Looper.getMainLooper()).post { processing = false; errorText = e.message ?: "Processing failed" } }
+                }
+            },
+            enabled = uris.isNotEmpty() && !processing,
+            modifier = Modifier.fillMaxWidth().height(54.dp)
+        ) { if (processing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Outlined.AutoFixHigh, null); Spacer(Modifier.width(8.dp)); Text(if (processing) "Processing…" else "Optimize & save") }
+        resultText?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) }
+        errorText?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        Text("Processing runs locally on your device. Outputs are saved to Pictures/ImageForge. Target-KB solving arrives in V0.4.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024 * 1024 -> "%.2f MB".format(bytes / (1024f * 1024f))
+    bytes >= 1024 -> "%.0f KB".format(bytes / 1024f)
+    else -> "$bytes B"
 }
 
 @Composable private fun Stat(label: String, value: String) { Column { Text(value, fontWeight = FontWeight.Bold); Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
@@ -215,7 +255,7 @@ private fun SettingsScreen(modifier: Modifier) {
         SettingRow(Icons.Outlined.Security, "Privacy", "Processing will stay on-device")
         SettingRow(Icons.Outlined.FolderOpen, "Export", "Choose destination when saving")
         SettingRow(Icons.Outlined.DarkMode, "Appearance", "System-ready theme foundation")
-        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.2.0 • Professional UI Foundation")
+        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.3.0 • Real Image Engine")
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(18.dp)) { Text("ImageForge Pro", fontWeight = FontWeight.Bold); Text("Planned lifetime unlock: unlimited batch, recipes, advanced workflows and no ads.", color = MaterialTheme.colorScheme.onSecondaryContainer) } }
     }
 }
