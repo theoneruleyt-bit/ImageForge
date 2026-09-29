@@ -11,6 +11,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.UUID
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -127,7 +128,7 @@ object ImageEngine {
     }
 
     private fun saveToPictures(context: Context, resolver: ContentResolver, bytes: ByteArray, format: OutputFormat): Uri {
-        val name = "ImageForge_${System.currentTimeMillis()}.${format.extension}"
+        val name = "ImageForge_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}.${format.extension}"
         if (Build.VERSION.SDK_INT < 29) {
             val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "ImageForge").apply { mkdirs() }
             val file = File(dir, name); file.outputStream().use { it.write(bytes) }; return Uri.fromFile(file)

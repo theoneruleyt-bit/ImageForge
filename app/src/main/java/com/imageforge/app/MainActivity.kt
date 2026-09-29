@@ -257,7 +257,7 @@ private fun BatchScreen(modifier: Modifier, uris: List<Uri>, pick: () -> Unit) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         ScreenHeader("Batch Studio", "Process up to 5 images in one workflow", Icons.Outlined.Collections)
         Card(shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(if (uris.isEmpty()) "No batch selected" else "${uris.size} images selected", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(if (uris.isEmpty()) "No batch selected" else "${uris.size} images selected • ${batch.size} queued", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(if (uris.size > 5) "Free mode will process the first 5 images. Unlimited batches will be a Pro feature." else "Free mode supports up to 5 images per batch.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = pick, enabled = !processing, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.AddPhotoAlternate, null); Spacer(Modifier.width(8.dp)); Text("Select images") }
         } }
@@ -330,7 +330,7 @@ private fun SettingsScreen(modifier: Modifier) {
         SettingRow(Icons.Outlined.Security, "Privacy", "Processing will stay on-device")
         SettingRow(Icons.Outlined.FolderOpen, "Export", "Choose destination when saving")
         SettingRow(Icons.Outlined.DarkMode, "Appearance", "System-ready theme foundation")
-        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.5.0 • Batch Engine")
+        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.5.1 • Batch Engine Fix")
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(18.dp)) { Text("ImageForge Pro", fontWeight = FontWeight.Bold); Text("Planned lifetime unlock: unlimited batch, recipes, advanced workflows and no ads.", color = MaterialTheme.colorScheme.onSecondaryContainer) } }
     }
 }
