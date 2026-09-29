@@ -1,12 +1,17 @@
-# ImageForge
-Privacy-first Android image preparation toolkit.
+# ImageForge V0.2 — Professional UI Foundation
 
-## V0.1 Foundation
-- Professional Material 3 shell
-- Home / Studio / Batch / Recipes / Settings navigation
-- Real Android Photo Picker
-- GitHub Actions debug APK build
-- No fake processing features
+Goal-based image preparation for Android.
 
-## CI
-Every push to `main` builds `:app:assembleDebug` and uploads the APK artifact.
+## V0.2
+- Professional Material 3 application shell
+- Home / Studio / Batch / Recipes / Settings
+- Goal Mode with six outcome-oriented workflows
+- Real Android Photo Picker (no broad storage permission)
+- Selected-image preview
+- Studio quality controls and output-predictor UI
+- Batch and recipe workflow foundations
+- Processing buttons intentionally disabled until the real V0.3 image engine exists
+- GitHub Actions debug build
+
+## Build
+CI runs `gradle :app:assembleDebug --stacktrace` on JDK 17 / Gradle 8.9.
