@@ -38,6 +38,8 @@ import com.imageforge.app.image.ImageProcessRequest
 import com.imageforge.app.image.OutputFormat
 import com.imageforge.app.image.MetadataEngine
 import com.imageforge.app.image.ImageMetadata
+import com.imageforge.app.image.ImageRecipe
+import com.imageforge.app.image.RecipeEngine
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
@@ -54,13 +56,13 @@ enum class Destination(val label: String, val icon: ImageVector) {
 }
 
 data class Goal(val title: String, val subtitle: String, val icon: ImageVector)
-data class Recipe(val title: String, val detail: String, val icon: ImageVector)
 
 @Composable
 fun ImageForgeApp() {
     var destination by remember { mutableStateOf(Destination.Home) }
     var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var studioGoal by remember { mutableStateOf("Make File Smaller") }
+    var pendingRecipe by remember { mutableStateOf<ImageRecipe?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(50)) { selectedUris = it }
     val openPicker = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
 
@@ -80,9 +82,9 @@ fun ImageForgeApp() {
     ) { padding ->
         when (destination) {
             Destination.Home -> HomeScreen(Modifier.padding(padding), selectedUris, openPicker) { goal -> studioGoal = goal; destination = Destination.Studio }
-            Destination.Studio -> StudioScreen(Modifier.padding(padding), selectedUris, studioGoal, openPicker)
+            Destination.Studio -> StudioScreen(Modifier.padding(padding), selectedUris, studioGoal, openPicker, pendingRecipe) { pendingRecipe = null }
             Destination.Batch -> BatchScreen(Modifier.padding(padding), selectedUris, openPicker)
-            Destination.Recipes -> RecipesScreen(Modifier.padding(padding))
+            Destination.Recipes -> RecipesScreen(Modifier.padding(padding)) { recipe -> pendingRecipe = recipe; studioGoal = if (recipe.removeMetadata) "Protect Privacy" else "Make File Smaller"; destination = Destination.Studio }
             Destination.Settings -> SettingsScreen(Modifier.padding(padding))
         }
     }
@@ -166,7 +168,7 @@ private fun OutputPredictorCard() {
 }
 
 @Composable
-private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: String, pick: () -> Unit) {
+private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: String, pick: () -> Unit, appliedRecipe: ImageRecipe?, onRecipeConsumed: () -> Unit) {
     val context = LocalContext.current
     var mode by remember(initialGoal) { mutableStateOf(initialGoal) }
     var quality by remember { mutableFloatStateOf(82f) }
@@ -192,6 +194,17 @@ private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: Strin
     }
     val original = remember(source) { source?.let { runCatching { ImageEngine.inspect(context, it) }.getOrNull() } }
     val metadata = remember(source) { source?.let { runCatching { MetadataEngine.read(context, it) }.getOrNull() } }
+
+    LaunchedEffect(appliedRecipe?.id) {
+        appliedRecipe?.let { recipe ->
+            mode = if (recipe.removeMetadata) "Protect Privacy" else "Make File Smaller"
+            quality = recipe.quality.toFloat()
+            format = recipe.format
+            maxDimension = recipe.maxDimension
+            outputUri = null; actualBytes = null; actualWidth = null; actualHeight = null; resultText = null
+            onRecipeConsumed()
+        }
+    }
 
     LaunchedEffect(source) { outputUri = null; actualBytes = null; actualWidth = null; actualHeight = null; resultText = null }
 
@@ -410,12 +423,65 @@ private fun BatchScreen(modifier: Modifier, uris: List<Uri>, pick: () -> Unit) {
 }
 
 @Composable
-private fun RecipesScreen(modifier: Modifier) {
-    val recipes = listOf(Recipe("Web Ready", "WebP • max 1600 px • balanced quality", Icons.Outlined.Language), Recipe("Marketplace Square", "1600 × 1600 • JPG • metadata off", Icons.Outlined.Storefront), Recipe("Private Share", "Keep size • remove metadata", Icons.Outlined.Security))
+private fun RecipesScreen(modifier: Modifier, applyRecipe: (ImageRecipe) -> Unit) {
+    val context = LocalContext.current
+    var custom by remember { mutableStateOf(RecipeEngine.loadCustom(context)) }
+    var showCreator by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    var format by remember { mutableStateOf(OutputFormat.JPEG) }
+    var quality by remember { mutableFloatStateOf(85f) }
+    var maxDimension by remember { mutableStateOf<Int?>(1600) }
+    var removeMetadata by remember { mutableStateOf(false) }
+    val all = RecipeEngine.builtIns + custom
+
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        ScreenHeader("Recipes", "Save repeatable image workflows", Icons.Outlined.AutoAwesome)
-        recipes.forEach { r -> Card(shape = RoundedCornerShape(22.dp)) { Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) { Icon(r.icon, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text(r.title, fontWeight = FontWeight.Bold); Text(r.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Icon(Icons.Outlined.Lock, "Pro", tint = MaterialTheme.colorScheme.onSurfaceVariant) } } }
-        OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(8.dp)); Text("Create recipe — Pro") }
+        ScreenHeader("Recipes", "One tap applies a repeatable workflow", Icons.Outlined.AutoAwesome)
+        Text("Built-in and saved recipes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        all.forEach { recipe ->
+            Card(shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(if (recipe.removeMetadata) Icons.Outlined.Security else Icons.Outlined.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(recipe.name, fontWeight = FontWeight.Bold)
+                            Text(recipe.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (recipe.builtIn) AssistChip(onClick = {}, label = { Text("Built-in") })
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { applyRecipe(recipe) }, modifier = Modifier.weight(1f)) { Text("Apply in Studio") }
+                        if (!recipe.builtIn) OutlinedButton(onClick = { RecipeEngine.delete(context, recipe.id); custom = RecipeEngine.loadCustom(context) }) { Icon(Icons.Outlined.Delete, "Delete") }
+                    }
+                }
+            }
+        }
+        OutlinedButton(onClick = { showCreator = !showCreator }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(8.dp)); Text(if (showCreator) "Close creator" else "Create custom recipe") }
+        if (showCreator) {
+            Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("New recipe", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(value = name, onValueChange = { name = it.take(32) }, label = { Text("Recipe name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text("Format", fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutputFormat.entries.forEach { f -> FilterChip(selected = format == f, onClick = { format = f }, label = { Text(f.label) }) } }
+                    Text("Quality ${quality.toInt()}%", fontWeight = FontWeight.SemiBold)
+                    Slider(value = quality, onValueChange = { quality = it }, valueRange = 40f..100f, enabled = format != OutputFormat.PNG)
+                    Text("Maximum dimension", fontWeight = FontWeight.SemiBold)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(null to "Original", 2048 to "2048", 1600 to "1600", 1080 to "1080").forEach { (v, label) -> FilterChip(selected = maxDimension == v, onClick = { maxDimension = v }, label = { Text(label) }) }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) { Switch(checked = removeMetadata, onCheckedChange = { removeMetadata = it }); Spacer(Modifier.width(10.dp)); Text("Remove metadata") }
+                    Button(onClick = {
+                        val cleanName = name.trim()
+                        if (cleanName.isNotEmpty()) {
+                            RecipeEngine.save(context, ImageRecipe("custom-${System.currentTimeMillis()}", cleanName, format, quality.toInt(), maxDimension, removeMetadata))
+                            custom = RecipeEngine.loadCustom(context); name = ""; showCreator = false
+                        }
+                    }, enabled = name.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Save, null); Spacer(Modifier.width(8.dp)); Text("Save recipe") }
+                }
+            }
+        }
+        Text("Recipes are stored locally on this device. Applying a recipe loads its settings into Studio before processing.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -426,7 +492,7 @@ private fun SettingsScreen(modifier: Modifier) {
         SettingRow(Icons.Outlined.Security, "Privacy", "Processing will stay on-device")
         SettingRow(Icons.Outlined.FolderOpen, "Export", "Choose destination when saving")
         SettingRow(Icons.Outlined.DarkMode, "Appearance", "System-ready theme foundation")
-        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.7.0 • Privacy Cleaner")
+        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.8.0 • Recipes / Workflow Engine")
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(18.dp)) { Text("ImageForge Pro", fontWeight = FontWeight.Bold); Text("Planned lifetime unlock: unlimited batch, recipes, advanced workflows and no ads.", color = MaterialTheme.colorScheme.onSecondaryContainer) } }
     }
 }

@@ -11,3 +11,6 @@
 
 
 - [x] V0.7 Privacy Cleaner + Metadata Engine
+
+- [x] V0.8 Recipes / Workflow Engine — built-in recipes, custom local recipes, apply-to-Studio workflow
+- [ ] V0.9 History + Export + Share
