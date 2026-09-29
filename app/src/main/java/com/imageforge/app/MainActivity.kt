@@ -73,9 +73,7 @@ fun ImageForgeApp() {
     var studioGoal by remember { mutableStateOf("Make File Smaller") }
     var pendingRecipe by remember { mutableStateOf<ImageRecipe?>(null) }
     val context = LocalContext.current
-    var billingRevision by remember { mutableIntStateOf(0) }
-    val billing = remember { BillingEngine(context.applicationContext) { billingRevision++ } }
-    billingRevision // observe BillingEngine callbacks and refresh Pro-gated UI
+    val billing = remember { BillingEngine(context.applicationContext) }
     DisposableEffect(billing) { onDispose { billing.close() } }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(50)) { selectedUris = it }
     val openPicker = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
@@ -586,7 +584,7 @@ private fun ProScreen(modifier: Modifier, billing: BillingEngine) {
             Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.CheckCircle, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(10.dp)); Text(feature, fontWeight = FontWeight.Medium) }
         }
         if (!billing.isPro) {
-            Button(onClick = { activity?.let(billing::launchPurchase) }, enabled = billing.isReady && activity != null, modifier = Modifier.fillMaxWidth().height(54.dp)) {
+            Button(onClick = { activity?.let(billing::launchPurchase) }, enabled = activity != null, modifier = Modifier.fillMaxWidth().height(54.dp)) {
                 Icon(Icons.Outlined.LockOpen, null); Spacer(Modifier.width(8.dp)); Text("Unlock Pro • $price")
             }
             if (!billing.isReady) Text("Connect to Google Play to load the purchase product. The actual localized price comes from Play Console.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -612,7 +610,7 @@ private fun SettingsScreen(modifier: Modifier) {
         SettingRow(Icons.Outlined.Security, "Privacy", "Processing will stay on-device")
         SettingRow(Icons.Outlined.FolderOpen, "Export", "Choose destination when saving")
         SettingRow(Icons.Outlined.DarkMode, "Appearance", "System-ready theme foundation")
-        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.10.3 • Free/Pro + Play Billing")
+        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.10.4 • Free/Pro + Play Billing")
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(18.dp)) { Text("ImageForge Pro", fontWeight = FontWeight.Bold); Text("Lifetime unlock: $1.99 • unlimited batch, custom recipes, advanced workflows and no ads.", color = MaterialTheme.colorScheme.onSecondaryContainer) } }
     }
 }

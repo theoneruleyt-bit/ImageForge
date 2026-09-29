@@ -2,40 +2,33 @@ package com.imageforge.app.image
 
 import android.app.Activity
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.android.billingclient.api.*
 
 /** Google Play one-time purchase manager for ImageForge Pro Lifetime. */
 class BillingEngine(
-    private val context: Context,
-    private val onStateChanged: () -> Unit = {}
+    private val context: Context
 ) : PurchasesUpdatedListener {
     companion object {
         const val PRO_PRODUCT_ID = "imageforge_pro_lifetime"
     }
 
-    var isReady: Boolean = false
+    var isReady by mutableStateOf(false)
         private set
-    var isPro: Boolean = false
+    var isPro by mutableStateOf(false)
         private set
-    var formattedPrice: String? = null
+    var formattedPrice by mutableStateOf<String?>(null)
         private set
-    var statusMessage: String? = null
+    var statusMessage by mutableStateOf<String?>(null)
         private set
-    var isRestoring: Boolean = false
+    var isRestoring by mutableStateOf(false)
         private set
     private var productDetails: ProductDetails? = null
     private var selectedOfferToken: String? = null
     private var pendingUserRestore: Boolean = false
     private var isConnecting: Boolean = false
-    private val mainHandler = Handler(Looper.getMainLooper())
-
-    private fun notifyStateChanged() {
-        if (Looper.myLooper() == Looper.getMainLooper()) onStateChanged()
-        else mainHandler.post { onStateChanged() }
-    }
-
     private val prefs = context.getSharedPreferences("imageforge_billing", Context.MODE_PRIVATE)
     private val billingClient = BillingClient.newBuilder(context)
         .setListener(this)
@@ -66,14 +59,14 @@ class BillingEngine(
                         isRestoring = false
                     }
                     statusMessage = "Google Play Billing is not available right now."
-                    notifyStateChanged()
+        
                 }
             }
 
             override fun onBillingServiceDisconnected() {
                 isConnecting = false
                 isReady = false
-                notifyStateChanged()
+    
             }
         })
     }
@@ -91,7 +84,7 @@ class BillingEngine(
                 selectedOfferToken = offer?.offerToken
                 formattedPrice = offer?.formattedPrice
             }
-            notifyStateChanged()
+
         }
     }
 
@@ -100,7 +93,7 @@ class BillingEngine(
         val offerToken = selectedOfferToken
         if (!isReady || details == null || offerToken == null) {
             statusMessage = "Pro product is not available yet. Install the Play test build and check the Play Console product."
-            notifyStateChanged()
+
             return
         }
         val productParams = BillingFlowParams.ProductDetailsParams.newBuilder()
@@ -113,7 +106,7 @@ class BillingEngine(
         )
         if (result.responseCode != BillingClient.BillingResponseCode.OK) {
             statusMessage = result.debugMessage.ifBlank { "Could not start purchase." }
-            notifyStateChanged()
+
         }
     }
 
@@ -122,7 +115,7 @@ class BillingEngine(
             pendingUserRestore = true
             isRestoring = true
             statusMessage = "Checking Google Play for previous purchases…"
-            notifyStateChanged()
+
         }
         if (!billingClient.isReady) {
             if (!isReady) connect()
@@ -148,7 +141,7 @@ class BillingEngine(
                 isRestoring = false
                 pendingUserRestore = false
             }
-            notifyStateChanged()
+
         }
     }
 
@@ -159,7 +152,7 @@ class BillingEngine(
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> restorePurchases()
             else -> statusMessage = result.debugMessage.ifBlank { "Purchase was not completed." }
         }
-        notifyStateChanged()
+
     }
 
     private fun handlePurchase(purchase: Purchase) {
@@ -176,7 +169,7 @@ class BillingEngine(
             if (result.responseCode != BillingClient.BillingResponseCode.OK) {
                 statusMessage = "Purchase received, but acknowledgement is pending."
             }
-            notifyStateChanged()
+
         }
     }
 
