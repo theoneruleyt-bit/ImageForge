@@ -9,3 +9,10 @@ Reads supported EXIF privacy fields (GPS, device/camera, capture date, software 
 
 ## V0.8 Recipes / Workflow Engine
 Built-in recipes, locally saved custom workflows, one-tap Studio application, format/quality/max-dimension/privacy settings.
+
+## V0.9 — History, Export & Share
+- Local history for successful Studio, Privacy Cleaner and Batch outputs.
+- Open saved outputs from history.
+- Android Sharesheet export/share with URI read grants.
+- Missing-file-safe history cards and per-item removal.
+- Clear history without deleting gallery images.

@@ -14,3 +14,6 @@
 
 - [x] V0.8 Recipes / Workflow Engine — built-in recipes, custom local recipes, apply-to-Studio workflow
 - [ ] V0.9 History + Export + Share
+
+## V0.9 — History + Export + Share
+Implemented: local output history, open/share-export actions, stale-output handling, per-item removal and non-destructive history clearing.

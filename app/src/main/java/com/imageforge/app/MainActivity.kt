@@ -1,6 +1,7 @@
 package com.imageforge.app
 
 import android.net.Uri
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -40,6 +41,8 @@ import com.imageforge.app.image.MetadataEngine
 import com.imageforge.app.image.ImageMetadata
 import com.imageforge.app.image.ImageRecipe
 import com.imageforge.app.image.RecipeEngine
+import com.imageforge.app.image.HistoryEngine
+import com.imageforge.app.image.HistoryItem
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
@@ -52,7 +55,7 @@ class MainActivity : ComponentActivity() {
 enum class Destination(val label: String, val icon: ImageVector) {
     Home("Home", Icons.Outlined.Home), Studio("Studio", Icons.Outlined.Tune),
     Batch("Batch", Icons.Outlined.Collections), Recipes("Recipes", Icons.Outlined.AutoAwesome),
-    Settings("Settings", Icons.Outlined.Settings)
+    History("History", Icons.Outlined.History)
 }
 
 data class Goal(val title: String, val subtitle: String, val icon: ImageVector)
@@ -85,7 +88,7 @@ fun ImageForgeApp() {
             Destination.Studio -> StudioScreen(Modifier.padding(padding), selectedUris, studioGoal, openPicker, pendingRecipe) { pendingRecipe = null }
             Destination.Batch -> BatchScreen(Modifier.padding(padding), selectedUris, openPicker)
             Destination.Recipes -> RecipesScreen(Modifier.padding(padding)) { recipe -> pendingRecipe = recipe; studioGoal = if (recipe.removeMetadata) "Protect Privacy" else "Make File Smaller"; destination = Destination.Studio }
-            Destination.Settings -> SettingsScreen(Modifier.padding(padding))
+            Destination.History -> HistoryScreen(Modifier.padding(padding))
         }
     }
 }
@@ -270,6 +273,7 @@ private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: Strin
                     runCatching { ImageEngine.processAndSave(context, req) }
                         .onSuccess { r -> Handler(Looper.getMainLooper()).post {
                             processing = false; outputUri = r.outputUri; actualBytes = r.bytes; actualWidth = r.width; actualHeight = r.height
+                            HistoryEngine.add(context, r, if (privacyMode) "Privacy Cleaner" else "Studio")
                             val targetStatus = if (r.targetBytes != null) if (r.targetMet) " • target met" else " • closest result" else ""
                             resultText = if (privacyMode) "Privacy-safe copy saved • metadata removed • ${formatBytes(r.bytes)}" else "Saved • ${formatBytes(r.bytes)} • ${r.width}×${r.height} • ${r.format.label} • Q${r.qualityUsed}$targetStatus"
                         } }
@@ -401,7 +405,7 @@ private fun BatchScreen(modifier: Modifier, uris: List<Uri>, pick: () -> Unit) {
                     var ok = 0; var failed = 0
                     batch.forEachIndexed { index, uri ->
                         runCatching { ImageEngine.processAndSave(context, ImageProcessRequest(uri, requestQuality, requestMax, requestFormat)) }
-                            .onSuccess { ok++ }.onFailure { failed++ }
+                            .onSuccess { r -> ok++; HistoryEngine.add(context, r, "Batch") }.onFailure { failed++ }
                         val done = index + 1; val okNow = ok; val failNow = failed
                         Handler(Looper.getMainLooper()).post { completed = done; successCount = okNow; failedCount = failNow }
                     }
@@ -419,6 +423,66 @@ private fun BatchScreen(modifier: Modifier, uris: List<Uri>, pick: () -> Unit) {
         }
         resultText?.let { Text(it, color = if (failedCount == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold) }
         Text("Each image is processed sequentially to reduce peak memory use. Outputs stay on-device and are saved to Pictures/ImageForge.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun HistoryScreen(modifier: Modifier) {
+    val context = LocalContext.current
+    var items by remember { mutableStateOf(HistoryEngine.load(context)) }
+    var message by remember { mutableStateOf<String?>(null) }
+
+    fun refresh() { items = HistoryEngine.load(context) }
+    fun open(item: HistoryItem) {
+        val uri = Uri.parse(item.outputUri)
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).apply { setDataAndType(uri, "image/*"); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }) }
+            .onFailure { message = "Output is no longer available on this device." }
+    }
+    fun share(item: HistoryItem) {
+        val uri = Uri.parse(item.outputUri)
+        runCatching {
+            context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "image/*"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }, "Share image"))
+        }.onFailure { message = "This output cannot be shared because the file is unavailable." }
+    }
+
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        ScreenHeader("History", "Open, export or share recent outputs", Icons.Outlined.History)
+        if (items.isEmpty()) {
+            Card(shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.History, null, tint = MaterialTheme.colorScheme.primary)
+                Text("No processed images yet", fontWeight = FontWeight.Bold)
+                Text("Successful Studio, Privacy and Batch outputs will appear here. History stays on this device.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("${items.size} recent output${if (items.size == 1) "" else "s"}", fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = { HistoryEngine.clear(context); refresh(); message = "History cleared. Saved images were not deleted." }) { Text("Clear history") }
+            }
+            items.forEach { item ->
+                val available = remember(item.outputUri) { HistoryEngine.isAvailable(context, item) }
+                Card(shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (available) UriImage(Uri.parse(item.outputUri), Modifier.size(72.dp).clip(RoundedCornerShape(14.dp)))
+                        else Surface(Modifier.size(72.dp), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) { Icon(Icons.Outlined.BrokenImage, null, Modifier.padding(20.dp)) }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(item.source, fontWeight = FontWeight.Bold)
+                            Text("${formatBytes(item.bytes)} • ${item.width}×${item.height} • ${item.format}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (available) "Saved in Pictures/ImageForge" else "File unavailable", style = MaterialTheme.typography.labelSmall, color = if (available) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { open(item) }, enabled = available) { Icon(Icons.Outlined.OpenInNew, null); Spacer(Modifier.width(6.dp)); Text("Open") }
+                        Button(onClick = { share(item) }, enabled = available) { Icon(Icons.Outlined.Share, null); Spacer(Modifier.width(6.dp)); Text("Share / Export") }
+                        TextButton(onClick = { HistoryEngine.remove(context, item.id); refresh() }) { Text("Remove") }
+                    }
+                } }
+            }
+        }
+        message?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) }
+        Text("Removing history entries does not delete exported images from your gallery.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
