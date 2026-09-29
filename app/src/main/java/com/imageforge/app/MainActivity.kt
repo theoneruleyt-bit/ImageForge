@@ -36,6 +36,8 @@ import com.imageforge.app.ui.theme.ImageForgeTheme
 import com.imageforge.app.image.ImageEngine
 import com.imageforge.app.image.ImageProcessRequest
 import com.imageforge.app.image.OutputFormat
+import com.imageforge.app.image.MetadataEngine
+import com.imageforge.app.image.ImageMetadata
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
@@ -181,6 +183,7 @@ private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: Strin
     val executor = remember { Executors.newSingleThreadExecutor() }
     DisposableEffect(Unit) { onDispose { executor.shutdown() } }
     val targetMode = mode == "Fit Upload Limit"
+    val privacyMode = mode == "Protect Privacy"
     val source = uris.firstOrNull()
     val targetBytes = if (targetMode) targetKb.toLong() * 1000L else null
     val request = source?.let { ImageProcessRequest(it, quality.toInt(), maxDimension, format, targetBytes) }
@@ -188,6 +191,7 @@ private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: Strin
         request?.let { runCatching { ImageEngine.predict(context, it) }.getOrNull() }
     }
     val original = remember(source) { source?.let { runCatching { ImageEngine.inspect(context, it) }.getOrNull() } }
+    val metadata = remember(source) { source?.let { runCatching { MetadataEngine.read(context, it) }.getOrNull() } }
 
     LaunchedEffect(source) { outputUri = null; actualBytes = null; actualWidth = null; actualHeight = null; resultText = null }
 
@@ -197,7 +201,11 @@ private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: Strin
             if (outputUri == null) UriPreview(source) else BeforeAfterPreview(source, outputUri!!)
         }
 
-        if (source != null && prediction != null && original != null) {
+        if (source != null && privacyMode) {
+            PrivacyMetadataCard(metadata)
+        }
+
+        if (source != null && prediction != null && original != null && !privacyMode) {
             Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Insights, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(8.dp)); Text(if (actualBytes == null) "Output Predictor" else "Actual Output", fontWeight = FontWeight.Bold) }
@@ -216,10 +224,13 @@ private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: Strin
 
         Text("Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Make File Smaller", "Fit Upload Limit", "Convert Format").forEach { label -> FilterChip(selected = mode == label, onClick = { mode = label; outputUri = null; actualBytes = null }, label = { Text(label) }) }
+            listOf("Make File Smaller", "Fit Upload Limit", "Convert Format", "Protect Privacy").forEach { label -> FilterChip(selected = mode == label, onClick = { mode = label; outputUri = null; actualBytes = null }, label = { Text(label) }) }
         }
         Card(shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (targetMode) {
+            if (privacyMode) {
+                Text("Privacy-safe copy", fontWeight = FontWeight.SemiBold)
+                Text("ImageForge re-encodes the image without EXIF metadata such as GPS, camera model, capture date and software tags.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else if (targetMode) {
                 Text("Target file size", fontWeight = FontWeight.SemiBold)
                 Text("Under ${targetKb.toInt()} KB", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 Slider(value = targetKb, onValueChange = { targetKb = it; outputUri = null; actualBytes = null }, valueRange = 50f..2000f, steps = 38)
@@ -247,14 +258,14 @@ private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: Strin
                         .onSuccess { r -> Handler(Looper.getMainLooper()).post {
                             processing = false; outputUri = r.outputUri; actualBytes = r.bytes; actualWidth = r.width; actualHeight = r.height
                             val targetStatus = if (r.targetBytes != null) if (r.targetMet) " • target met" else " • closest result" else ""
-                            resultText = "Saved • ${formatBytes(r.bytes)} • ${r.width}×${r.height} • ${r.format.label} • Q${r.qualityUsed}$targetStatus"
+                            resultText = if (privacyMode) "Privacy-safe copy saved • metadata removed • ${formatBytes(r.bytes)}" else "Saved • ${formatBytes(r.bytes)} • ${r.width}×${r.height} • ${r.format.label} • Q${r.qualityUsed}$targetStatus"
                         } }
                         .onFailure { e -> Handler(Looper.getMainLooper()).post { processing = false; errorText = e.message ?: "Processing failed" } }
                 }
             },
             enabled = source != null && !processing && (!targetMode || format != OutputFormat.PNG),
             modifier = Modifier.fillMaxWidth().height(54.dp)
-        ) { if (processing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Outlined.AutoFixHigh, null); Spacer(Modifier.width(8.dp)); Text(if (processing) "Processing…" else if (targetMode) "Fit target & compare" else "Optimize & compare") }
+        ) { if (processing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Outlined.AutoFixHigh, null); Spacer(Modifier.width(8.dp)); Text(if (processing) "Processing…" else if (privacyMode) "Remove metadata & save" else if (targetMode) "Fit target & compare" else "Optimize & compare") }
         resultText?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) }
         errorText?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Text("Processing stays on your device. Outputs are saved to Pictures/ImageForge.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -290,6 +301,40 @@ private fun formatBytes(bytes: Long): String = when {
 }
 
 @Composable private fun Stat(label: String, value: String) { Column { Text(value, fontWeight = FontWeight.Bold); Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+
+@Composable
+private fun PrivacyMetadataCard(metadata: ImageMetadata?) {
+    Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Security, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text("Privacy scan", fontWeight = FontWeight.Bold)
+            }
+            if (metadata == null) {
+                Text("Metadata could not be read from this image.", color = MaterialTheme.colorScheme.onSecondaryContainer)
+            } else if (metadata.presentCount == 0) {
+                Text("No supported privacy-sensitive EXIF fields were found.", color = MaterialTheme.colorScheme.onSecondaryContainer)
+            } else {
+                Text("${metadata.presentCount} metadata group${if (metadata.presentCount == 1) "" else "s"} found", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                MetadataRow("Location", if (metadata.hasLocation) "${"%.5f".format(metadata.latitude)}, ${"%.5f".format(metadata.longitude)}" else "Not present")
+                MetadataRow("Device", listOfNotNull(metadata.make, metadata.model).joinToString(" ").ifBlank { "Not present" })
+                MetadataRow("Lens", metadata.lensModel ?: "Not present")
+                MetadataRow("Captured", metadata.dateTime ?: "Not present")
+                MetadataRow("Software", metadata.software ?: "Not present")
+            }
+            Text("Remove Metadata creates a new re-encoded copy. Your original image is not modified.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+        }
+    }
+}
+
+@Composable
+private fun MetadataRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, modifier = Modifier.widthIn(max = 210.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
 
 @Composable
 private fun BatchScreen(modifier: Modifier, uris: List<Uri>, pick: () -> Unit) {
@@ -381,7 +426,7 @@ private fun SettingsScreen(modifier: Modifier) {
         SettingRow(Icons.Outlined.Security, "Privacy", "Processing will stay on-device")
         SettingRow(Icons.Outlined.FolderOpen, "Export", "Choose destination when saving")
         SettingRow(Icons.Outlined.DarkMode, "Appearance", "System-ready theme foundation")
-        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.5.1 • Batch Engine Fix")
+        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.7.0 • Privacy Cleaner")
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(18.dp)) { Text("ImageForge Pro", fontWeight = FontWeight.Bold); Text("Planned lifetime unlock: unlimited batch, recipes, advanced workflows and no ads.", color = MaterialTheme.colorScheme.onSecondaryContainer) } }
     }
 }

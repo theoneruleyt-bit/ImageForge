@@ -11,8 +11,8 @@ android {
         applicationId = "com.imageforge.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.6.0"
+        versionCode = 9
+        versionName = "0.7.0"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -32,5 +32,6 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.exifinterface:exifinterface:1.4.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
