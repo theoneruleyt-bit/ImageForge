@@ -30,3 +30,11 @@ Create and activate a one-time product with the exact ID `imageforge_pro_lifetim
 
 ## V0.10.4 Billing UI state fix
 Billing UI state now uses Compose-observable state directly. Purchase and restore actions always provide visible feedback even when Google Play Billing is unavailable.
+
+
+## V0.11.0 — Release hardening
+- CI runs unit tests before APK assembly.
+- Added regression coverage for image dimension scaling and invalid/edge inputs.
+- Kept sequential batch processing to reduce peak memory pressure.
+- Added accessibility semantics to key quality sliders.
+- Version bumped to 0.11.0 (17).

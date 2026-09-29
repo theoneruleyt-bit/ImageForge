@@ -51,6 +51,18 @@ enum class OutputFormat(val label: String, val extension: String, val mimeType: 
 
 private data class EncodedCandidate(val bitmap: Bitmap, val bytes: ByteArray, val quality: Int)
 
+
+object ImageMath {
+    fun scaledDimensions(width: Int, height: Int, maxDimension: Int?): Pair<Int, Int> {
+        val safeWidth = width.coerceAtLeast(1)
+        val safeHeight = height.coerceAtLeast(1)
+        val longest = max(safeWidth, safeHeight)
+        if (maxDimension == null || maxDimension <= 0 || longest <= maxDimension) return safeWidth to safeHeight
+        val scale = maxDimension.toFloat() / longest
+        return (safeWidth * scale).roundToInt().coerceAtLeast(1) to (safeHeight * scale).roundToInt().coerceAtLeast(1)
+    }
+}
+
 object ImageEngine {
     fun inspect(context: Context, uri: Uri): ImageInfo {
         val resolver = context.contentResolver
@@ -62,10 +74,7 @@ object ImageEngine {
 
     fun predict(context: Context, request: ImageProcessRequest): OutputPrediction {
         val info = inspect(context, request.source)
-        val longest = max(info.width, info.height).coerceAtLeast(1)
-        val scale = request.maxDimension?.let { if (longest > it) it.toFloat() / longest else 1f } ?: 1f
-        val width = (info.width * scale).roundToInt().coerceAtLeast(1)
-        val height = (info.height * scale).roundToInt().coerceAtLeast(1)
+        val (width, height) = ImageMath.scaledDimensions(info.width, info.height, request.maxDimension)
         val pixelRatio = (width.toDouble() * height) / (info.width.coerceAtLeast(1).toDouble() * info.height.coerceAtLeast(1))
         val estimated = request.targetBytes?.takeIf { request.format != OutputFormat.PNG }?.let { target ->
             if (info.bytes > 0) minOf(target, (info.bytes * pixelRatio).toLong().coerceAtLeast(1L)) else target

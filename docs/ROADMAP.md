@@ -11,8 +11,11 @@
 - [x] V0.8 Recipes / Workflow Engine
 - [x] V0.9 History + Export + Share
 - [x] V0.10 Free/Pro + Google Play Billing foundation
-- [ ] V0.11 Tests + performance + accessibility + release hardening
+- [x] V0.11 Tests + performance + accessibility + release hardening
 - [ ] V1.0 Signed AAB + Play Store production preparation
 
 ## V0.10 — Free/Pro + Lifetime Purchase
 Play Billing Library 9.1.0, one-time product `imageforge_pro_lifetime`, purchase/acknowledgement/restore flow, $1.99 US pricing plan, useful Free tier, unlimited batch and custom recipe Pro gates.
+
+## V0.11 — Release hardening
+CI now runs JVM unit tests before building the APK. Image dimension scaling is isolated and covered by regression tests, batch processing remains sequential to control peak memory use, and key quality controls expose accessibility descriptions for assistive technologies. V1.0 remains the signed Play release stage.

@@ -31,6 +31,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -389,7 +391,7 @@ private fun BatchScreen(modifier: Modifier, uris: List<Uri>, pick: () -> Unit, i
         Card(shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Batch settings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Quality ${quality.toInt()}%", fontWeight = FontWeight.SemiBold)
-            Slider(value = quality, onValueChange = { quality = it }, valueRange = 40f..100f, enabled = !processing && format != OutputFormat.PNG)
+            Slider(value = quality, onValueChange = { quality = it }, valueRange = 40f..100f, enabled = !processing && format != OutputFormat.PNG, modifier = Modifier.semantics { contentDescription = "Batch image quality" })
             Text("Output format", fontWeight = FontWeight.SemiBold)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutputFormat.entries.forEach { f -> FilterChip(selected = format == f, onClick = { format = f }, enabled = !processing, label = { Text(f.label) }) }
@@ -540,7 +542,7 @@ private fun RecipesScreen(modifier: Modifier, isPro: Boolean, openPro: () -> Uni
                     Text("Format", fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutputFormat.entries.forEach { f -> FilterChip(selected = format == f, onClick = { format = f }, label = { Text(f.label) }) } }
                     Text("Quality ${quality.toInt()}%", fontWeight = FontWeight.SemiBold)
-                    Slider(value = quality, onValueChange = { quality = it }, valueRange = 40f..100f, enabled = format != OutputFormat.PNG)
+                    Slider(value = quality, onValueChange = { quality = it }, valueRange = 40f..100f, enabled = format != OutputFormat.PNG, modifier = Modifier.semantics { contentDescription = "Recipe image quality" })
                     Text("Maximum dimension", fontWeight = FontWeight.SemiBold)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(null to "Original", 2048 to "2048", 1600 to "1600", 1080 to "1080").forEach { (v, label) -> FilterChip(selected = maxDimension == v, onClick = { maxDimension = v }, label = { Text(label) }) }
@@ -610,7 +612,7 @@ private fun SettingsScreen(modifier: Modifier) {
         SettingRow(Icons.Outlined.Security, "Privacy", "Processing will stay on-device")
         SettingRow(Icons.Outlined.FolderOpen, "Export", "Choose destination when saving")
         SettingRow(Icons.Outlined.DarkMode, "Appearance", "System-ready theme foundation")
-        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.10.4 • Free/Pro + Play Billing")
+        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.11.0 • Release hardening")
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(18.dp)) { Text("ImageForge Pro", fontWeight = FontWeight.Bold); Text("Lifetime unlock: $1.99 • unlimited batch, custom recipes, advanced workflows and no ads.", color = MaterialTheme.colorScheme.onSecondaryContainer) } }
     }
 }
