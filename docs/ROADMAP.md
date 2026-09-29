@@ -1,19 +1,12 @@
 # ImageForge Roadmap
 
-- V0.1: Buildable foundation — complete
-- V0.2: Professional UI + navigation + Photo Picker — this release
-- V0.3: Real single-image compression / resize / conversion engine
-- V0.4: Target Size Solver + Output Predictor
-- V0.5: Batch Engine
-- V0.6: Metadata / Privacy Cleaner
-- V0.7: Recipes + History
-- V0.8: Billing / Pro / release hardening
-
-
-## V0.3 — Real Image Engine
-- On-device JPEG/PNG/WebP encoding
-- Quality compression
-- Maximum-dimension resize
-- MediaStore export to Pictures/ImageForge
-- Background processing with visible result state
-- Target-KB solver remains V0.4
+- [x] V0.1 Buildable foundation
+- [x] V0.2 Professional UI + Photo Picker
+- [x] V0.3 Real compression / resize / conversion engine
+- [x] V0.4 Smart Target Size / Exact KB engine
+- [ ] V0.5 Batch processing engine
+- [ ] V0.6 Before/After + Output Predictor
+- [ ] V0.7 Metadata / Privacy Cleaner
+- [ ] V0.8 Recipes
+- [ ] V0.9 History / export / share
+- [ ] V1.0 Billing, QA and Play Store release

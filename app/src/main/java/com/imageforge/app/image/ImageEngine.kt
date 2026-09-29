@@ -8,9 +8,9 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
-import java.io.File
 import android.provider.MediaStore
 import java.io.ByteArrayOutputStream
+import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -18,7 +18,8 @@ data class ImageProcessRequest(
     val source: Uri,
     val quality: Int = 82,
     val maxDimension: Int? = null,
-    val format: OutputFormat = OutputFormat.JPEG
+    val format: OutputFormat = OutputFormat.JPEG,
+    val targetBytes: Long? = null
 )
 
 data class ImageProcessResult(
@@ -26,31 +27,81 @@ data class ImageProcessResult(
     val bytes: Long,
     val width: Int,
     val height: Int,
-    val format: OutputFormat
+    val format: OutputFormat,
+    val qualityUsed: Int,
+    val targetBytes: Long? = null,
+    val targetMet: Boolean = true
 )
 
 enum class OutputFormat(val label: String, val extension: String, val mimeType: String) {
     JPEG("JPG", "jpg", "image/jpeg"), PNG("PNG", "png", "image/png"), WEBP("WebP", "webp", "image/webp")
 }
 
+private data class EncodedCandidate(val bitmap: Bitmap, val bytes: ByteArray, val quality: Int)
+
 object ImageEngine {
     fun processAndSave(context: Context, request: ImageProcessRequest): ImageProcessResult {
         val resolver = context.contentResolver
         val source = decodeSampled(resolver, request.source, request.maxDimension)
             ?: error("Image could not be decoded")
-        val resized = resizeIfNeeded(source, request.maxDimension)
-        if (resized !== source) source.recycle()
+        var working = resizeIfNeeded(source, request.maxDimension)
+        if (working !== source) source.recycle()
 
-        val bytes = ByteArrayOutputStream().use { stream ->
-            val ok = resized.compress(compressFormat(request.format), request.quality.coerceIn(1, 100), stream)
-            if (!ok) error("Image encoding failed")
-            stream.toByteArray()
+        val target = request.targetBytes?.takeIf { it > 0 && request.format != OutputFormat.PNG }
+        val candidate = if (target != null) solveTarget(working, request.format, target) else {
+            EncodedCandidate(working, encode(working, request.format, request.quality), request.quality.coerceIn(1, 100))
         }
-        val uri = saveToPictures(context, resolver, bytes, request.format)
-        val result = ImageProcessResult(uri, bytes.size.toLong(), resized.width, resized.height, request.format)
-        resized.recycle()
+        if (candidate.bitmap !== working) working.recycle()
+        val uri = saveToPictures(context, resolver, candidate.bytes, request.format)
+        val result = ImageProcessResult(
+            outputUri = uri,
+            bytes = candidate.bytes.size.toLong(),
+            width = candidate.bitmap.width,
+            height = candidate.bitmap.height,
+            format = request.format,
+            qualityUsed = candidate.quality,
+            targetBytes = target,
+            targetMet = target == null || candidate.bytes.size <= target
+        )
+        candidate.bitmap.recycle()
         return result
     }
+
+    private fun solveTarget(initial: Bitmap, format: OutputFormat, target: Long): EncodedCandidate {
+        var bitmap = initial
+        var best: EncodedCandidate? = null
+        repeat(8) {
+            var low = 20
+            var high = 95
+            var roundBest: EncodedCandidate? = null
+            while (low <= high) {
+                val q = (low + high) / 2
+                val bytes = encode(bitmap, format, q)
+                if (bytes.size <= target) {
+                    roundBest = EncodedCandidate(bitmap, bytes, q)
+                    low = q + 1
+                } else high = q - 1
+            }
+            if (roundBest != null) return roundBest
+
+            val fallback = encode(bitmap, format, 20)
+            if (best == null || fallback.size < best!!.bytes.size) best = EncodedCandidate(bitmap, fallback, 20)
+            if (max(bitmap.width, bitmap.height) <= 480) return best!!
+
+            val nextW = (bitmap.width * 0.85f).roundToInt().coerceAtLeast(1)
+            val nextH = (bitmap.height * 0.85f).roundToInt().coerceAtLeast(1)
+            val smaller = Bitmap.createScaledBitmap(bitmap, nextW, nextH, true)
+            if (bitmap !== initial) bitmap.recycle()
+            bitmap = smaller
+        }
+        return best ?: EncodedCandidate(bitmap, encode(bitmap, format, 20), 20)
+    }
+
+    private fun encode(bitmap: Bitmap, format: OutputFormat, quality: Int): ByteArray =
+        ByteArrayOutputStream().use { stream ->
+            if (!bitmap.compress(compressFormat(format), quality.coerceIn(1, 100), stream)) error("Image encoding failed")
+            stream.toByteArray()
+        }
 
     private fun decodeSampled(resolver: ContentResolver, uri: Uri, maxDimension: Int?): Bitmap? {
         if (maxDimension == null) return resolver.openInputStream(uri)?.use(BitmapFactory::decodeStream)
@@ -79,25 +130,16 @@ object ImageEngine {
         val name = "ImageForge_${System.currentTimeMillis()}.${format.extension}"
         if (Build.VERSION.SDK_INT < 29) {
             val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "ImageForge").apply { mkdirs() }
-            val file = File(dir, name)
-            file.outputStream().use { it.write(bytes) }
-            return Uri.fromFile(file)
+            val file = File(dir, name); file.outputStream().use { it.write(bytes) }; return Uri.fromFile(file)
         }
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, name)
-            put(MediaStore.Images.Media.MIME_TYPE, format.mimeType)
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/ImageForge")
-            put(MediaStore.Images.Media.IS_PENDING, 1)
+            put(MediaStore.Images.Media.DISPLAY_NAME, name); put(MediaStore.Images.Media.MIME_TYPE, format.mimeType)
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/ImageForge"); put(MediaStore.Images.Media.IS_PENDING, 1)
         }
-        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-            ?: error("Could not create output file")
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("Could not create output file")
         try {
             resolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("Could not open output file")
-            values.clear(); values.put(MediaStore.Images.Media.IS_PENDING, 0); resolver.update(uri, values, null, null)
-            return uri
-        } catch (t: Throwable) {
-            resolver.delete(uri, null, null)
-            throw t
-        }
+            values.clear(); values.put(MediaStore.Images.Media.IS_PENDING, 0); resolver.update(uri, values, null, null); return uri
+        } catch (t: Throwable) { resolver.delete(uri, null, null); throw t }
     }
 }

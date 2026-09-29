@@ -170,25 +170,38 @@ private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: Strin
     var quality by remember { mutableFloatStateOf(82f) }
     var format by remember { mutableStateOf(OutputFormat.JPEG) }
     var maxDimension by remember { mutableStateOf<Int?>(null) }
+    var targetKb by remember { mutableFloatStateOf(500f) }
     var processing by remember { mutableStateOf(false) }
     var resultText by remember { mutableStateOf<String?>(null) }
     var errorText by remember { mutableStateOf<String?>(null) }
     val executor = remember { Executors.newSingleThreadExecutor() }
     DisposableEffect(Unit) { onDispose { executor.shutdown() } }
+    val targetMode = mode == "Fit Upload Limit"
 
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        ScreenHeader("Studio", "Real on-device compression, resize and conversion", Icons.Outlined.Tune)
+        ScreenHeader("Studio", "Smart target-size compression runs on-device", Icons.Outlined.Tune)
         if (uris.isEmpty()) EmptySelection(pick) else UriPreview(uris.first())
         Text("Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("Make File Smaller", "Fit Upload Limit", "Convert Format").forEach { label -> FilterChip(selected = mode == label, onClick = { mode = label }, label = { Text(label) }) }
         }
         Card(shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Quality balance", fontWeight = FontWeight.SemiBold); Text("${quality.toInt()}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-            Slider(value = quality, onValueChange = { quality = it }, valueRange = 40f..100f)
+            if (targetMode) {
+                Text("Target file size", fontWeight = FontWeight.SemiBold)
+                Text("Under ${targetKb.toInt()} KB", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Slider(value = targetKb, onValueChange = { targetKb = it }, valueRange = 50f..2000f, steps = 38)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(100, 250, 500, 1024).forEach { kb -> FilterChip(selected = targetKb.toInt() == kb, onClick = { targetKb = kb.toFloat() }, label = { Text(if (kb == 1024) "1 MB" else "$kb KB") }) }
+                }
+                Text("ImageForge searches for the highest usable quality under the limit, then reduces dimensions only when needed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text("Quality balance", fontWeight = FontWeight.SemiBold); Text("${quality.toInt()}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Slider(value = quality, onValueChange = { quality = it }, valueRange = 40f..100f)
+            }
             HorizontalDivider()
             Text("Output format", fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutputFormat.entries.forEach { f -> FilterChip(selected = format == f, onClick = { format = f }, label = { Text(f.label) }) } }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutputFormat.entries.forEach { f -> FilterChip(selected = format == f, onClick = { format = f }, enabled = !targetMode || f != OutputFormat.PNG, label = { Text(f.label) }) } }
+            if (targetMode && format == OutputFormat.PNG) Text("Exact-size mode uses JPG or WebP because PNG quality is lossless.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             Text("Maximum dimension", fontWeight = FontWeight.SemiBold)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(null to "Original", 2048 to "2048 px", 1600 to "1600 px", 1080 to "1080 px").forEach { (value, label) -> FilterChip(selected = maxDimension == value, onClick = { maxDimension = value }, label = { Text(label) }) }
@@ -198,18 +211,24 @@ private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: Strin
             onClick = {
                 val source = uris.firstOrNull() ?: return@Button
                 processing = true; resultText = null; errorText = null
+                val targetBytes = if (targetMode) targetKb.toLong() * 1024L else null
                 executor.execute {
-                    runCatching { ImageEngine.processAndSave(context, ImageProcessRequest(source, quality.toInt(), maxDimension, format)) }
-                        .onSuccess { r -> Handler(Looper.getMainLooper()).post { processing = false; resultText = "Saved • ${formatBytes(r.bytes)} • ${r.width}×${r.height} • ${r.format.label}" } }
+                    runCatching { ImageEngine.processAndSave(context, ImageProcessRequest(source, quality.toInt(), maxDimension, format, targetBytes)) }
+                        .onSuccess { r -> Handler(Looper.getMainLooper()).post {
+                            processing = false
+                            val targetStatus = if (r.targetBytes != null) if (r.targetMet) " • target met" else " • closest result"
+                            else ""
+                            resultText = "Saved • ${formatBytes(r.bytes)} • ${r.width}×${r.height} • ${r.format.label} • Q${r.qualityUsed}$targetStatus"
+                        } }
                         .onFailure { e -> Handler(Looper.getMainLooper()).post { processing = false; errorText = e.message ?: "Processing failed" } }
                 }
             },
-            enabled = uris.isNotEmpty() && !processing,
+            enabled = uris.isNotEmpty() && !processing && (!targetMode || format != OutputFormat.PNG),
             modifier = Modifier.fillMaxWidth().height(54.dp)
-        ) { if (processing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Outlined.AutoFixHigh, null); Spacer(Modifier.width(8.dp)); Text(if (processing) "Processing…" else "Optimize & save") }
+        ) { if (processing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Outlined.AutoFixHigh, null); Spacer(Modifier.width(8.dp)); Text(if (processing) "Solving…" else if (targetMode) "Fit target & save" else "Optimize & save") }
         resultText?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) }
         errorText?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        Text("Processing runs locally on your device. Outputs are saved to Pictures/ImageForge. Target-KB solving arrives in V0.4.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Processing stays on your device. Outputs are saved to Pictures/ImageForge.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -234,7 +253,7 @@ private fun BatchScreen(modifier: Modifier, uris: List<Uri>, pick: () -> Unit) {
         SettingRow(Icons.Outlined.SwapHoriz, "Format", "Keep original format")
         SettingRow(Icons.Outlined.TrackChanges, "Maximum size", "No limit")
         SettingRow(Icons.Outlined.Badge, "Rename", "Original filenames")
-        Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Process batch — engine in V0.3") }
+        Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Process batch — planned for V0.5") }
     }
 }
 
@@ -255,7 +274,7 @@ private fun SettingsScreen(modifier: Modifier) {
         SettingRow(Icons.Outlined.Security, "Privacy", "Processing will stay on-device")
         SettingRow(Icons.Outlined.FolderOpen, "Export", "Choose destination when saving")
         SettingRow(Icons.Outlined.DarkMode, "Appearance", "System-ready theme foundation")
-        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.3.0 • Real Image Engine")
+        SettingRow(Icons.Outlined.Info, "About ImageForge", "Version 0.4.0 • Smart Target Size")
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(18.dp)) { Text("ImageForge Pro", fontWeight = FontWeight.Bold); Text("Planned lifetime unlock: unlimited batch, recipes, advanced workflows and no ads.", color = MaterialTheme.colorScheme.onSecondaryContainer) } }
     }
 }
