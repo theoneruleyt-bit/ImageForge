@@ -10,3 +10,5 @@
 - [ ] V0.8 Recipes
 - [ ] V0.9 History / export / share
 - [ ] V1.0 Billing, QA and Play Store release
+
+- V0.4.1: strict decimal-byte target cap and quality-search refinement.

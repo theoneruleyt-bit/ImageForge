@@ -72,7 +72,7 @@ object ImageEngine {
         var best: EncodedCandidate? = null
         repeat(8) {
             var low = 20
-            var high = 95
+            var high = 100
             var roundBest: EncodedCandidate? = null
             while (low <= high) {
                 val q = (low + high) / 2

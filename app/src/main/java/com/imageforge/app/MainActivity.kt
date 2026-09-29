@@ -211,7 +211,7 @@ private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: Strin
             onClick = {
                 val source = uris.firstOrNull() ?: return@Button
                 processing = true; resultText = null; errorText = null
-                val targetBytes = if (targetMode) targetKb.toLong() * 1024L else null
+                val targetBytes = if (targetMode) targetKb.toLong() * 1000L else null
                 executor.execute {
                     runCatching { ImageEngine.processAndSave(context, ImageProcessRequest(source, quality.toInt(), maxDimension, format, targetBytes)) }
                         .onSuccess { r -> Handler(Looper.getMainLooper()).post {
@@ -233,8 +233,8 @@ private fun StudioScreen(modifier: Modifier, uris: List<Uri>, initialGoal: Strin
 }
 
 private fun formatBytes(bytes: Long): String = when {
-    bytes >= 1024 * 1024 -> "%.2f MB".format(bytes / (1024f * 1024f))
-    bytes >= 1024 -> "%.0f KB".format(bytes / 1024f)
+    bytes >= 1_000_000 -> "%.2f MB".format(bytes / 1_000_000f)
+    bytes >= 1_000 -> "%.0f KB".format(bytes / 1_000f)
     else -> "$bytes B"
 }
 
